@@ -80,6 +80,7 @@ export default function Ardoise() {
   const [filterCat, setFilterCat] = useState("all");
   const [query, setQuery] = useState("");
   const [showCats, setShowCats] = useState(false);
+  const [editCatId, setEditCatId] = useState(null);
   const fileRef = useRef(null);
 
   /* persistance */
@@ -177,6 +178,9 @@ export default function Ardoise() {
   };
 
   const removeExpense = (id) => setExpenses((x) => x.filter((e) => e.id !== id));
+
+  const updateCat = (id, categoryId) =>
+    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId } : e)));
 
   const addCat = (lbl, color) => {
     const id = uid();
@@ -451,7 +455,26 @@ export default function Ardoise() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-slate-200">{e.label}</p>
                         <p className="text-xs text-slate-500">
-                          {new Date(e.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · {c.label}
+                          {new Date(e.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                          {" · "}
+                          {editCatId === e.id ? (
+                            <select
+                              autoFocus
+                              value={e.categoryId}
+                              onChange={(ev) => { updateCat(e.id, ev.target.value); setEditCatId(null); }}
+                              onBlur={() => setEditCatId(null)}
+                              className="rounded border border-slate-700 bg-slate-800 px-1 text-xs text-slate-200 outline-none"
+                            >
+                              {cats.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={() => setEditCatId(e.id)}
+                              className="underline decoration-dotted underline-offset-2 hover:text-slate-300"
+                            >
+                              {c.label}
+                            </button>
+                          )}
                         </p>
                       </div>
                       <span className="font-mono text-sm tabular-nums text-slate-100">{fmtEUR.format(e.amount)}</span>
