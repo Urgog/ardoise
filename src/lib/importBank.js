@@ -32,6 +32,15 @@ export function guessCat(label) {
   return "autre";
 }
 
+// Applique d'abord les règles utilisateur (simples sous-chaînes), puis les règles par défaut.
+export function guessCatWithRules(label, userRules = []) {
+  const l = (label || "").toLowerCase();
+  for (const { pattern, categoryId } of userRules) {
+    if (pattern && l.includes(pattern.toLowerCase())) return categoryId;
+  }
+  return guessCat(label);
+}
+
 /* ------------------------------------------------ helpers de parsing */
 
 const toNumber = (raw) => {
@@ -133,6 +142,75 @@ function rowToExpenseHeuristic(row) {
     return { amount: Math.abs(amount), label: label || "Import", categoryId: guessCat(label), date };
   }
   return null;
+}
+
+/* ------------------------------------------------ OFX / QFX */
+
+export function importBankOFX(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const out = [];
+        // extrait tous les blocs <STMTTRN>...</STMTTRN>
+        const blocks = [...text.matchAll(/<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi)];
+        for (const [, block] of blocks) {
+          const get = (tag) => { const m = block.match(new RegExp(`<${tag}>([^<\r\n]+)`, "i")); return m ? m[1].trim() : null; };
+          const type = get("TRNTYPE") || "";
+          const rawAmt = get("TRNAMT");
+          const amount = rawAmt ? parseFloat(rawAmt.replace(",", ".")) : null;
+          if (amount == null || amount >= 0) continue; // on ne garde que les débits
+          const rawDate = get("DTPOSTED") || get("DTUSER") || "";
+          // format OFX : YYYYMMDDHHMMSS ou YYYYMMDD
+          const y = rawDate.slice(0, 4), mo = rawDate.slice(4, 6), d = rawDate.slice(6, 8);
+          const date = y && mo && d ? `${y}-${mo}-${d}` : null;
+          if (!date) continue;
+          const label = (get("NAME") || get("MEMO") || "Import OFX").trim();
+          out.push({ amount: Math.abs(amount), label, categoryId: guessCat(label), date });
+        }
+        resolve(out);
+      } catch (e) { reject(e); }
+    };
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+/* ------------------------------------------------ QIF */
+
+export function importBankQIF(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (ev) => {
+      try {
+        const lines = ev.target.result.split(/\r?\n/);
+        const out = [];
+        let cur = {};
+        for (const line of lines) {
+          if (line.startsWith("^")) {
+            if (cur.date && cur.amount != null && cur.amount < 0) {
+              const label = cur.label || "Import QIF";
+              out.push({ amount: Math.abs(cur.amount), label, categoryId: guessCat(label), date: cur.date });
+            }
+            cur = {};
+          } else if (line.startsWith("D")) {
+            cur.date = toISODate(line.slice(1).trim());
+          } else if (line.startsWith("T") || line.startsWith("U")) {
+            const n = toNumber(line.slice(1).trim().replace(/,(\d{2})$/, ".$1")); // QIF US : virgule = décimale
+            if (n != null && cur.amount == null) cur.amount = n;
+          } else if (line.startsWith("P")) {
+            cur.label = line.slice(1).trim();
+          } else if (line.startsWith("M") && !cur.label) {
+            cur.label = line.slice(1).trim();
+          }
+        }
+        resolve(out);
+      } catch (e) { reject(e); }
+    };
+    reader.readAsText(file, "utf-8");
+  });
 }
 
 /* ------------------------------------------------ API publique */

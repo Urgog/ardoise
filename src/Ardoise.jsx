@@ -5,10 +5,11 @@ import {
 import {
   Plus, Trash2, ShoppingCart, Home, Car, UtensilsCrossed, Gamepad2, HeartPulse,
   Repeat, ShoppingBag, MoreHorizontal, Tag, Upload, Download, X, TrendingDown,
-  TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon,
+  TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon, Pencil, Check,
+  FileJson, BarChart2, AlertTriangle, ChevronLeft, ChevronRight, BookOpen,
 } from "lucide-react";
 import { storage } from "./lib/storage";
-import { importBankCSV } from "./lib/importBank";
+import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules } from "./lib/importBank";
 
 /* ---------------------------------------------------------------- utilitaires */
 
@@ -81,7 +82,13 @@ export default function Ardoise() {
   const [query, setQuery] = useState("");
   const [showCats, setShowCats] = useState(false);
   const [editCatId, setEditCatId] = useState(null);
+  const [editExpense, setEditExpense] = useState(null);
+  const [showYear, setShowYear] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [budgets, setBudgets] = useState({});
+  const [rules, setRules] = useState([]);
   const fileRef = useRef(null);
+  const jsonRef = useRef(null);
 
   /* persistance */
   useEffect(() => {
@@ -91,6 +98,8 @@ export default function Ardoise() {
         const d = JSON.parse(r.value);
         if (d.categories?.length) setCats(d.categories);
         if (d.expenses) setExpenses(d.expenses);
+        if (d.budgets) setBudgets(d.budgets);
+        if (d.rules) setRules(d.rules);
       } catch { /* ignore */ }
     }
     setLoaded(true);
@@ -98,8 +107,8 @@ export default function Ardoise() {
 
   useEffect(() => {
     if (!loaded) return;
-    storage.set(KEY, JSON.stringify({ expenses, categories: cats }));
-  }, [expenses, cats, loaded]);
+    storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules }));
+  }, [expenses, cats, budgets, rules, loaded]);
 
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
@@ -182,6 +191,40 @@ export default function Ardoise() {
   const updateCat = (id, categoryId) =>
     setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId } : e)));
 
+  const updateExpense = (id, patch) =>
+    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+
+  const setCatBudget = (catId, value) =>
+    setBudgets((b) => ({ ...b, [catId]: value }));
+
+  const exportJSON = () => {
+    const data = JSON.stringify({ expenses, categories: cats, budgets, rules }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ardoise-sauvegarde.json"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importJSONFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!Array.isArray(d.expenses)) throw new Error("Format invalide");
+        if (!window.confirm(`Restaurer ${d.expenses.length} dépense(s) ? Les données actuelles seront remplacées.`)) return;
+        if (d.categories?.length) setCats(d.categories);
+        setExpenses(d.expenses);
+        if (d.budgets) setBudgets(d.budgets);
+        if (d.rules) setRules(d.rules);
+        alert("Restauration réussie.");
+      } catch {
+        alert("Fichier JSON invalide ou corrompu.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const addCat = (lbl, color) => {
     const id = uid();
     setCats((c) => [...c.slice(0, c.length - 1), { id, label: lbl, color, builtin: false }, c[c.length - 1]]);
@@ -195,7 +238,13 @@ export default function Ardoise() {
 
   const handleImport = async (file) => {
     try {
-      const parsed = await importBankCSV(file);
+      const ext = file.name.split(".").pop().toLowerCase();
+      let parsed;
+      if (ext === "ofx" || ext === "qfx") parsed = await importBankOFX(file);
+      else if (ext === "qif") parsed = await importBankQIF(file);
+      else parsed = await importBankCSV(file);
+      // applique les règles utilisateur par-dessus l'auto-cat
+      parsed = parsed.map((e) => ({ ...e, categoryId: guessCatWithRules(e.label, rules) || e.categoryId }));
       if (!parsed.length) {
         alert("Aucune dépense détectée. Vérifie que le fichier contient une colonne date et une colonne montant ou débit.");
         return;
@@ -250,16 +299,26 @@ export default function Ardoise() {
             <h1 className="mt-1 text-sm text-slate-400">Suivi de dépenses · {monthLabel(month)}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Calendar size={15} className="text-slate-500" />
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500"
+            <button
+              onClick={() => setShowYear((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
             >
-              {months.map((m) => (
-                <option key={m} value={m}>{monthLabel(m)}</option>
-              ))}
-            </select>
+              <BarChart2 size={14} /> {showYear ? "Vue mois" : "Vue année"}
+            </button>
+            {!showYear && (
+              <>
+                <Calendar size={15} className="text-slate-500" />
+                <select
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500"
+                >
+                  {months.map((m) => (
+                    <option key={m} value={m}>{monthLabel(m)}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         </header>
 
@@ -288,12 +347,18 @@ export default function Ardoise() {
                 ))}
               </div>
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-                {byCat.slice(0, 6).map((c) => (
-                  <span key={c.id} className="flex items-center gap-1.5 text-xs text-slate-400">
-                    <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
-                    {c.label} <span className="font-mono text-slate-500">{Math.round((c.value / monthTotal) * 100)}%</span>
-                  </span>
-                ))}
+                {byCat.slice(0, 6).map((c) => {
+                  const budget = budgets[c.id];
+                  const over = budget > 0 && c.value > budget;
+                  return (
+                    <span key={c.id} className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
+                      {c.label}
+                      <span className="font-mono text-slate-500">{Math.round((c.value / monthTotal) * 100)}%</span>
+                      {over && <AlertTriangle size={11} className="text-amber-400" title={`Budget dépassé (${fmtEUR.format(budget)})`} />}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -364,12 +429,28 @@ export default function Ardoise() {
               className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
               <Tag size={15} /> Catégories
             </button>
-            <input ref={fileRef} type="file" accept=".csv,text/csv" hidden
+            <button onClick={() => setShowRules(true)}
+              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
+              <BookOpen size={15} /> Règles
+            </button>
+            <button onClick={exportJSON}
+              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
+              <FileJson size={15} /> Sauvegarder (JSON)
+            </button>
+            <button onClick={() => jsonRef.current?.click()}
+              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
+              <FileJson size={15} /> Restaurer (JSON)
+            </button>
+            <input ref={fileRef} type="file" accept=".csv,.ofx,.qfx,.qif,text/csv" hidden
               onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
+            <input ref={jsonRef} type="file" accept=".json,application/json" hidden
+              onChange={(e) => { if (e.target.files?.[0]) importJSONFile(e.target.files[0]); e.target.value = ""; }} />
           </div>
         </section>
 
-        {empty ? (
+        {showYear ? (
+          <YearView expenses={expenses} year={month.slice(0, 4)} cats={cats} catById={catById} />
+        ) : empty ? (
           <EmptyState onSample={() => setExpenses(SAMPLE())} />
         ) : (
           <>
@@ -478,6 +559,10 @@ export default function Ardoise() {
                         </p>
                       </div>
                       <span className="font-mono text-sm tabular-nums text-slate-100">{fmtEUR.format(e.amount)}</span>
+                      <button onClick={() => setEditExpense(e)}
+                        className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-emerald-400">
+                        <Pencil size={15} />
+                      </button>
                       <button onClick={() => removeExpense(e.id)}
                         className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
                         <Trash2 size={16} />
@@ -497,7 +582,13 @@ export default function Ardoise() {
       </div>
 
       {showCats && (
-        <CatManager cats={cats} byCat={byCat} onAdd={addCat} onRemove={removeCat} onClose={() => setShowCats(false)} />
+        <CatManager cats={cats} byCat={byCat} budgets={budgets} onBudget={setCatBudget} onAdd={addCat} onRemove={removeCat} onClose={() => setShowCats(false)} />
+      )}
+      {editExpense && (
+        <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, patch); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
+      )}
+      {showRules && (
+        <RulesManager rules={rules} cats={cats} onChange={setRules} onClose={() => setShowRules(false)} />
       )}
     </div>
   );
@@ -566,30 +657,38 @@ function EmptyState({ onSample }) {
   );
 }
 
-function CatManager({ cats, byCat, onAdd, onRemove, onClose }) {
+function CatManager({ cats, byCat, budgets, onBudget, onAdd, onRemove, onClose }) {
   const [lbl, setLbl] = useState("");
   const [color, setColor] = useState("#22D3EE");
   const totalById = Object.fromEntries(byCat.map((c) => [c.id, c.value]));
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-200">Catégories</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
         </div>
-        <ul className="mb-4 max-h-64 space-y-1 overflow-y-auto">
+        <ul className="mb-4 max-h-72 space-y-1 overflow-y-auto">
           {cats.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
-              <span className="flex items-center gap-2 text-sm text-slate-200">
-                <span className="h-3 w-3 rounded-full" style={{ background: c.color }} />
+            <li key={c.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
+              <span className="flex flex-1 items-center gap-2 text-sm text-slate-200">
+                <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: c.color }} />
                 {c.label}
               </span>
-              <span className="flex items-center gap-3">
-                <span className="font-mono text-xs text-slate-500">{totalById[c.id] ? fmtEUR.format(totalById[c.id]) : "—"}</span>
-                {!c.builtin && (
-                  <button onClick={() => onRemove(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
-                )}
-              </span>
+              <span className="font-mono text-xs text-slate-500 w-20 text-right">{totalById[c.id] ? fmtEUR.format(totalById[c.id]) : "—"}</span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-600">Budget</span>
+                <input
+                  type="number" min="0" placeholder="—"
+                  value={budgets[c.id] || ""}
+                  onChange={(ev) => onBudget(c.id, ev.target.value ? parseFloat(ev.target.value) : 0)}
+                  className="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-0.5 text-xs text-slate-200 outline-none focus:border-emerald-500"
+                />
+                <span className="text-xs text-slate-600">€</span>
+              </div>
+              {!c.builtin && (
+                <button onClick={() => onRemove(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
+              )}
             </li>
           ))}
         </ul>
@@ -601,6 +700,173 @@ function CatManager({ cats, byCat, onAdd, onRemove, onClose }) {
             className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
           <button disabled={!lbl.trim()} onClick={() => { onAdd(lbl.trim(), color); setLbl(""); }}
             className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-40">
+            <Plus size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditExpenseModal({ expense, cats, onSave, onClose }) {
+  const [amount, setAmount] = useState(String(expense.amount));
+  const [label, setLabel] = useState(expense.label);
+  const [catId, setCatId] = useState(expense.categoryId);
+  const [date, setDate] = useState(expense.date);
+
+  const handleSave = () => {
+    const a = parseFloat(String(amount).replace(",", "."));
+    if (!a || a <= 0) return;
+    onSave({ amount: Math.round(a * 100) / 100, label: label.trim() || expense.label, categoryId: catId, date });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-200">Modifier la dépense</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
+        </div>
+        <div className="space-y-3">
+          <Field label="Montant (€)">
+            <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-lg text-slate-100 outline-none focus:border-emerald-500" />
+          </Field>
+          <Field label="Libellé">
+            <input value={label} onChange={(e) => setLabel(e.target.value)}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-100 outline-none focus:border-emerald-500" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Catégorie">
+              <select value={catId} onChange={(e) => setCatId(e.target.value)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-100 outline-none focus:border-emerald-500">
+                {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Date">
+              <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
+            </Field>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500">Annuler</button>
+          <button onClick={handleSave} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+            <Check size={15} /> Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function YearView({ expenses, year, catById }) {
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const m = String(i + 1).padStart(2, "0");
+    const ym = `${year}-${m}`;
+    const exps = expenses.filter((e) => e.date.startsWith(ym));
+    const total = exps.reduce((s, e) => s + e.amount, 0);
+    const label = new Date(+year, i, 1).toLocaleDateString("fr-FR", { month: "short" });
+    return { ym, label, total, exps };
+  });
+  const yearTotal = months.reduce((s, m) => s + m.total, 0);
+  const max = Math.max(...months.map((m) => m.total), 1);
+
+  const [selYear, setSelYear] = useState(+year);
+  const displayMonths = months.map((m, i) => ({
+    ...m,
+    label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
+    ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
+    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`)).reduce((s, e) => s + e.amount, 0),
+  }));
+  const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
+  const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <div className="mb-5 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-300">Récap annuel</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setSelYear((y) => y - 1)} className="text-slate-500 hover:text-slate-200"><ChevronLeft size={16} /></button>
+          <span className="font-mono text-sm text-slate-200">{selYear}</span>
+          <button onClick={() => setSelYear((y) => y + 1)} className="text-slate-500 hover:text-slate-200"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+      <div className="mb-4 grid grid-cols-12 items-end gap-1" style={{ height: 120 }}>
+        {displayMonths.map((m) => (
+          <div key={m.ym} className="flex flex-col items-center gap-1">
+            <div className="w-full rounded-t" style={{ height: `${(m.total / displayMax) * 100}%`, background: m.total ? "#34D399" : "#1e293b", minHeight: m.total ? 4 : 0 }}
+              title={fmtEUR.format(m.total)} />
+            <span className="text-[10px] text-slate-500">{m.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-slate-800 pt-4">
+        <table className="w-full text-sm">
+          <tbody>
+            {displayMonths.filter((m) => m.total > 0).map((m) => (
+              <tr key={m.ym} className="border-b border-slate-800/50">
+                <td className="py-1.5 capitalize text-slate-400">{m.label}</td>
+                <td className="py-1.5 text-right font-mono text-slate-200">{fmtEUR.format(m.total)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td className="pt-3 font-medium text-slate-300">Total {selYear}</td>
+              <td className="pt-3 text-right font-mono font-semibold text-emerald-400">{fmtEUR.format(displayTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RulesManager({ rules, cats, onChange, onClose }) {
+  const [pattern, setPattern] = useState("");
+  const [catId, setCatId] = useState(cats[0]?.id || "autre");
+
+  const addRule = () => {
+    if (!pattern.trim()) return;
+    onChange([...rules, { pattern: pattern.trim(), categoryId: catId }]);
+    setPattern("");
+  };
+
+  const removeRule = (i) => onChange(rules.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-200">Règles d'auto-catégorisation</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
+        </div>
+        <p className="mb-4 text-xs text-slate-500">Si le libellé contient le mot-clé, la catégorie est appliquée automatiquement à l'import. Les règles perso ont priorité sur les règles par défaut.</p>
+        <ul className="mb-4 max-h-64 space-y-1 overflow-y-auto">
+          {rules.length === 0 && <li className="py-4 text-center text-xs text-slate-600">Aucune règle personnalisée.</li>}
+          {rules.map((r, i) => {
+            const cat = cats.find((c) => c.id === r.categoryId);
+            return (
+              <li key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
+                <span className="flex-1 font-mono text-sm text-slate-200">"{r.pattern}"</span>
+                <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="h-2 w-2 rounded-full" style={{ background: cat?.color || "#94A3B8" }} />
+                  {cat?.label || r.categoryId}
+                </span>
+                <button onClick={() => removeRule(i)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex gap-2">
+          <input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="mot-clé"
+            onKeyDown={(e) => e.key === "Enter" && addRule()}
+            className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
+          <select value={catId} onChange={(e) => setCatId(e.target.value)}
+            className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-sm text-slate-200 outline-none focus:border-emerald-500">
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <button onClick={addRule} disabled={!pattern.trim()}
+            className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">
             <Plus size={16} />
           </button>
         </div>
