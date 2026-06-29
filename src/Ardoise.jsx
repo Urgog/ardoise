@@ -46,22 +46,6 @@ const CatIcon = ({ id, ...p }) => {
   return <I {...p} />;
 };
 
-const SAMPLE = () => {
-  const base = new Date();
-  const mk = (daysAgo, amount, label, categoryId) => {
-    const d = new Date(base); d.setDate(d.getDate() - daysAgo);
-    return { id: uid(), amount, label, categoryId, date: d.toISOString().slice(0, 10) };
-  };
-  return [
-    mk(1, 62.4, "Carrefour", "alimentation"), mk(2, 13.9, "Boulangerie du coin", "restaurants"),
-    mk(3, 9.99, "Spotify", "abonnements"), mk(4, 48, "Plein essence", "transport"),
-    mk(6, 1050, "Loyer", "logement"), mk(8, 34.5, "Restaurant midi", "restaurants"),
-    mk(9, 22, "Pharmacie", "sante"), mk(11, 79.9, "Decathlon", "shopping"),
-    mk(14, 15.5, "Cinéma", "loisirs"), mk(18, 88.2, "Intermarché", "alimentation"),
-    mk(40, 1050, "Loyer", "logement"), mk(42, 71, "Auchan", "alimentation"),
-    mk(45, 55, "Plein essence", "transport"), mk(50, 12.99, "Netflix", "loisirs"),
-  ];
-};
 
 /* ---------------------------------------------------------------- composant */
 
@@ -451,7 +435,7 @@ export default function Ardoise() {
         {showYear ? (
           <YearView expenses={expenses} year={month.slice(0, 4)} cats={cats} catById={catById} />
         ) : empty ? (
-          <EmptyState onSample={() => setExpenses(SAMPLE())} />
+          <EmptyState />
         ) : (
           <>
             <section className="mb-6 grid gap-4 lg:grid-cols-5">
@@ -558,7 +542,7 @@ export default function Ardoise() {
                           )}
                         </p>
                       </div>
-                      <span className="font-mono text-sm tabular-nums text-slate-100">{fmtEUR.format(e.amount)}</span>
+                      <span className="font-mono text-sm tabular-nums text-rose-400">−{fmtEUR.format(e.amount)}</span>
                       <button onClick={() => setEditExpense(e)}
                         className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-emerald-400">
                         <Pencil size={15} />
@@ -638,7 +622,7 @@ function BarTip({ active, payload, label }) {
   );
 }
 
-function EmptyState({ onSample }) {
+function EmptyState() {
   return (
     <section className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 px-6 py-16 text-center">
       <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400">
@@ -646,13 +630,8 @@ function EmptyState({ onSample }) {
       </div>
       <h3 className="text-base font-medium text-slate-200">Commence ton ardoise</h3>
       <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
-        Ajoute ta première dépense ci-dessus, importe un relevé bancaire au format CSV,
-        ou charge un jeu d'exemple pour voir les graphiques.
+        Ajoute ta première dépense ci-dessus ou importe un relevé bancaire au format CSV.
       </p>
-      <button onClick={onSample}
-        className="mt-5 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:border-emerald-500 hover:text-emerald-400">
-        Charger un exemple
-      </button>
     </section>
   );
 }
