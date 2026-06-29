@@ -5,7 +5,7 @@ import {
 import {
   Plus, Trash2, ShoppingCart, Home, Car, UtensilsCrossed, Gamepad2, HeartPulse,
   Repeat, ShoppingBag, MoreHorizontal, Tag, Upload, Download, X, TrendingDown,
-  TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon,
+  TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon, Settings, RotateCcw,
 } from "lucide-react";
 import { storage } from "./lib/storage";
 import { importBankCSV } from "./lib/importBank";
@@ -79,7 +79,7 @@ export default function Ardoise() {
   const [month, setMonth] = useState(monthOf(todayISO()));
   const [filterCat, setFilterCat] = useState("all");
   const [query, setQuery] = useState("");
-  const [showCats, setShowCats] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const fileRef = useRef(null);
 
   /* persistance */
@@ -189,6 +189,14 @@ export default function Ardoise() {
     setCats((c) => c.filter((x) => x.id !== id));
   };
 
+  const resetData = () => {
+    if (!window.confirm(`Remettre à zéro toutes les données ? Cette action est irréversible.`)) return;
+    setExpenses([]);
+    setCats(DEFAULT_CATS);
+    storage.remove(KEY);
+    setShowSettings(false);
+  };
+
   const handleImport = async (file) => {
     try {
       const parsed = await importBankCSV(file);
@@ -256,6 +264,13 @@ export default function Ardoise() {
                 <option key={m} value={m}>{monthLabel(m)}</option>
               ))}
             </select>
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Paramètres"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 text-slate-500 transition hover:border-slate-600 hover:text-slate-300"
+            >
+              <Settings size={15} />
+            </button>
           </div>
         </header>
 
@@ -355,10 +370,6 @@ export default function Ardoise() {
             <button onClick={exportCSV}
               className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
               <Download size={15} /> Exporter
-            </button>
-            <button onClick={() => setShowCats(true)}
-              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
-              <Tag size={15} /> Catégories
             </button>
             <input ref={fileRef} type="file" accept=".csv,text/csv" hidden
               onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
@@ -473,8 +484,11 @@ export default function Ardoise() {
         </p>
       </div>
 
-      {showCats && (
-        <CatManager cats={cats} byCat={byCat} onAdd={addCat} onRemove={removeCat} onClose={() => setShowCats(false)} />
+      {showSettings && (
+        <SettingsPanel
+          cats={cats} byCat={byCat} onAddCat={addCat} onRemoveCat={removeCat}
+          onReset={resetData} onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );
@@ -543,18 +557,25 @@ function EmptyState({ onSample }) {
   );
 }
 
-function CatManager({ cats, byCat, onAdd, onRemove, onClose }) {
+function SettingsPanel({ cats, byCat, onAddCat, onRemoveCat, onReset, onClose }) {
   const [lbl, setLbl] = useState("");
   const [color, setColor] = useState("#22D3EE");
   const totalById = Object.fromEntries(byCat.map((c) => [c.id, c.value]));
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-200">Catégories</h3>
+
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <Settings size={15} className="text-slate-400" /> Paramètres
+          </h3>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
         </div>
-        <ul className="mb-4 max-h-64 space-y-1 overflow-y-auto">
+
+        {/* Catégories */}
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Catégories</p>
+        <ul className="mb-3 max-h-52 space-y-1 overflow-y-auto">
           {cats.map((c) => (
             <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
               <span className="flex items-center gap-2 text-sm text-slate-200">
@@ -564,23 +585,35 @@ function CatManager({ cats, byCat, onAdd, onRemove, onClose }) {
               <span className="flex items-center gap-3">
                 <span className="font-mono text-xs text-slate-500">{totalById[c.id] ? fmtEUR.format(totalById[c.id]) : "—"}</span>
                 {!c.builtin && (
-                  <button onClick={() => onRemove(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
+                  <button onClick={() => onRemoveCat(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
                 )}
               </span>
             </li>
           ))}
         </ul>
-        <div className="flex items-center gap-2">
+        <div className="mb-6 flex items-center gap-2">
           <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
             className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-slate-700 bg-transparent" />
           <input value={lbl} onChange={(e) => setLbl(e.target.value)} placeholder="Nouvelle catégorie"
-            onKeyDown={(e) => { if (e.key === "Enter" && lbl.trim()) { onAdd(lbl.trim(), color); setLbl(""); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && lbl.trim()) { onAddCat(lbl.trim(), color); setLbl(""); } }}
             className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
-          <button disabled={!lbl.trim()} onClick={() => { onAdd(lbl.trim(), color); setLbl(""); }}
+          <button disabled={!lbl.trim()} onClick={() => { onAddCat(lbl.trim(), color); setLbl(""); }}
             className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-40">
             <Plus size={16} />
           </button>
         </div>
+
+        {/* Zone danger */}
+        <div className="border-t border-slate-800 pt-5">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">Zone de danger</p>
+          <button
+            onClick={onReset}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-900 px-4 py-2.5 text-sm text-rose-400 transition hover:bg-rose-900/30"
+          >
+            <RotateCcw size={15} /> Remettre à zéro toutes les données
+          </button>
+        </div>
+
       </div>
     </div>
   );
