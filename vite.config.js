@@ -5,5 +5,5 @@ import react from "@vitejs/plugin-react";
 // un sous-dossier GitHub Pages (https://user.github.io/ardoise/).
 export default defineConfig({
   plugins: [react()],
-  base: "./",
+  base: "/ardoise/",
 });
