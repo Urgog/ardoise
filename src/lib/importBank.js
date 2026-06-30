@@ -107,16 +107,28 @@ function rowToExpenseByHeader(row, idx) {
   const label = (row[idx.label] != null ? String(row[idx.label]) : "").trim() || "Import";
 
   let amount = null;
+  let isCredit = false;
+
   if (idx.montant >= 0) {
     const m = toNumber(row[idx.montant]);
-    if (m != null && m < 0) amount = Math.abs(m); // débit
-  } else if (idx.debit >= 0) {
-    const d = toNumber(row[idx.debit]);
-    if (d != null && d !== 0) amount = Math.abs(d);
+    if (m != null && m !== 0) {
+      isCredit = m > 0;
+      amount = Math.abs(m);
+    }
+  } else {
+    // colonnes Débit / Crédit séparées
+    if (idx.debit >= 0) {
+      const d = toNumber(row[idx.debit]);
+      if (d != null && d !== 0) amount = Math.abs(d);
+    }
+    if (amount == null && idx.credit >= 0) {
+      const c = toNumber(row[idx.credit]);
+      if (c != null && c !== 0) { amount = Math.abs(c); isCredit = true; }
+    }
   }
-  if (amount == null) return null; // crédit ou ligne sans débit -> ignorée
+  if (amount == null) return null;
 
-  return { amount, label, categoryId: guessCat(label), date };
+  return { amount, label, categoryId: guessCat(label), date, isCredit };
 }
 
 // Fallback heuristique quand aucune en-tête n'est trouvée : on scanne la ligne.
@@ -138,8 +150,9 @@ function rowToExpenseHeuristic(row) {
     const s = String(cell || "").trim();
     if (s.length > label.length && toNumber(s) == null && !toISODate(s)) label = s;
   }
-  if (date && amount != null && amount < 0) {
-    return { amount: Math.abs(amount), label: label || "Import", categoryId: guessCat(label), date };
+  if (date && amount != null && amount !== 0) {
+    const isCredit = amount > 0;
+    return { amount: Math.abs(amount), label: label || "Import", categoryId: guessCat(label), date, isCredit };
   }
   return null;
 }
@@ -161,14 +174,15 @@ export function importBankOFX(file) {
           const type = get("TRNTYPE") || "";
           const rawAmt = get("TRNAMT");
           const amount = rawAmt ? parseFloat(rawAmt.replace(",", ".")) : null;
-          if (amount == null || amount >= 0) continue; // on ne garde que les débits
+          if (amount == null || amount === 0) continue;
+          const isCredit = amount > 0;
           const rawDate = get("DTPOSTED") || get("DTUSER") || "";
           // format OFX : YYYYMMDDHHMMSS ou YYYYMMDD
           const y = rawDate.slice(0, 4), mo = rawDate.slice(4, 6), d = rawDate.slice(6, 8);
           const date = y && mo && d ? `${y}-${mo}-${d}` : null;
           if (!date) continue;
           const label = (get("NAME") || get("MEMO") || "Import OFX").trim();
-          out.push({ amount: Math.abs(amount), label, categoryId: guessCat(label), date });
+          out.push({ amount: Math.abs(amount), label, categoryId: guessCat(label), date, isCredit });
         }
         resolve(out);
       } catch (e) { reject(e); }
@@ -190,9 +204,10 @@ export function importBankQIF(file) {
         let cur = {};
         for (const line of lines) {
           if (line.startsWith("^")) {
-            if (cur.date && cur.amount != null && cur.amount < 0) {
+            if (cur.date && cur.amount != null && cur.amount !== 0) {
               const label = cur.label || "Import QIF";
-              out.push({ amount: Math.abs(cur.amount), label, categoryId: guessCat(label), date: cur.date });
+              const isCredit = cur.amount > 0;
+              out.push({ amount: Math.abs(cur.amount), label, categoryId: guessCat(label), date: cur.date, isCredit });
             }
             cur = {};
           } else if (line.startsWith("D")) {
