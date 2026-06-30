@@ -307,10 +307,10 @@ export default function Ardoise() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setShowForecast(false); setShowYear((v) => !v); }}
+              onClick={() => { if (showForecast) { setShowForecast(false); } else { setShowYear((v) => !v); } }}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear && !showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
             >
-              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : "Vue année"}
+              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : showForecast ? "Vue mois" : "Vue année"}
             </button>
             <button
               onClick={() => { setShowForecast((v) => !v); setShowYear(false); }}
