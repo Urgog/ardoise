@@ -155,6 +155,17 @@ export default function Ardoise() {
     storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
   }, [expenses, cats, budgets, rules, forecastPeople, forecastItems, loaded]);
 
+  // Reclassifie les dépenses en "Autre" sans manualCat quand les règles changent ou au démarrage
+  useEffect(() => {
+    if (!loaded) return;
+    setExpenses((prev) => prev.map((e) => {
+      if (e.manualCat || e.categoryId !== "autre") return e;
+      const categoryId = guessCatWithRules(e.label, rules);
+      const needsReview = categoryId === "autre";
+      return { ...e, categoryId, needsReview };
+    }));
+  }, [rules, loaded]);
+
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
   const months = useMemo(() => {
@@ -700,9 +711,10 @@ export default function Ardoise() {
           onChangeRules={(newRules) => {
             setRules(newRules);
             setExpenses((x) => x.map((e) => {
-              if (e.manualCat) return e; // catégorie choisie manuellement : ne pas écraser
-              const guessed = guessCatWithRules(e.label, newRules);
-              return guessed ? { ...e, categoryId: guessed } : e;
+              if (e.manualCat) return e;
+              const categoryId = guessCatWithRules(e.label, newRules);
+              const needsReview = categoryId === "autre";
+              return { ...e, categoryId, needsReview };
             }));
           }} onExportJSON={exportJSON}
           onImportJSON={() => jsonRef.current?.click()}
