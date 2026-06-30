@@ -7,7 +7,7 @@ import {
   Repeat, ShoppingBag, MoreHorizontal, Tag, Upload, Download, X, TrendingDown,
   TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon, Pencil, Check,
   FileJson, BarChart2, AlertTriangle, ChevronLeft, ChevronRight, BookOpen,
-  Settings, RotateCcw,
+  Settings, RotateCcw, ClipboardList, UserPlus, Users,
 } from "lucide-react";
 import { storage } from "./lib/storage";
 import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules } from "./lib/importBank";
@@ -71,8 +71,11 @@ export default function Ardoise() {
   const [editCatId, setEditCatId] = useState(null);
   const [editExpense, setEditExpense] = useState(null);
   const [showYear, setShowYear] = useState(false);
+  const [showForecast, setShowForecast] = useState(false);
   const [budgets, setBudgets] = useState({});
   const [rules, setRules] = useState([]);
+  const [forecastPeople, setForecastPeople] = useState([{ id: "p1", name: "Moi" }, { id: "p2", name: "Autre" }]);
+  const [forecastItems, setForecastItems] = useState([]);
   const fileRef = useRef(null);
   const jsonRef = useRef(null);
 
@@ -91,6 +94,8 @@ export default function Ardoise() {
         if (d.expenses) setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
         if (d.rules) setRules(d.rules);
+        if (d.forecastPeople?.length) setForecastPeople(d.forecastPeople);
+        if (d.forecastItems) setForecastItems(d.forecastItems);
       } catch { /* ignore */ }
     }
     setLoaded(true);
@@ -98,7 +103,7 @@ export default function Ardoise() {
 
   useEffect(() => {
     if (!loaded) return;
-    storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules }));
+    storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
   }, [expenses, cats, budgets, rules, loaded]);
 
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
@@ -114,7 +119,7 @@ export default function Ardoise() {
     [expenses, month]
   );
   const isTransfer = (e) => catById[e.categoryId]?.excludeFromTotal;
-  const monthTotal = useMemo(() => monthExp.filter((e) => !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
+  const monthTotal = useMemo(() => monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
 
   const prevMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -122,7 +127,7 @@ export default function Ardoise() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, [month]);
   const prevTotal = useMemo(
-    () => expenses.filter((e) => monthOf(e.date) === prevMonth && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    () => expenses.filter((e) => monthOf(e.date) === prevMonth && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0),
     [expenses, prevMonth]
   );
   const delta = prevTotal ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
@@ -143,7 +148,7 @@ export default function Ardoise() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const total = expenses.filter((e) => monthOf(e.date) === ym && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
+      const total = expenses.filter((e) => monthOf(e.date) === ym && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0);
       out.push({ ym, total, lbl: d.toLocaleDateString("fr-FR", { month: "short" }), cur: ym === month });
     }
     return out;
@@ -297,12 +302,18 @@ export default function Ardoise() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowYear((v) => !v)}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
+              onClick={() => { setShowForecast(false); setShowYear((v) => !v); }}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear && !showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
             >
-              <BarChart2 size={14} /> {showYear ? "Vue mois" : "Vue année"}
+              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : "Vue année"}
             </button>
-            {!showYear && (
+            <button
+              onClick={() => { setShowForecast((v) => !v); setShowYear(false); }}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
+            >
+              <ClipboardList size={14} /> Prévis.
+            </button>
+            {!showYear && !showForecast && (
               <>
                 <Calendar size={15} className="text-slate-500" />
                 <select
@@ -326,7 +337,14 @@ export default function Ardoise() {
           </div>
         </header>
 
-        <section className="mb-6 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-900/40 p-6">
+        {showForecast && (
+          <ForecastView
+            people={forecastPeople} items={forecastItems}
+            onChangePeople={setForecastPeople} onChangeItems={setForecastItems}
+          />
+        )}
+
+        {!showForecast && <section className="mb-6 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-900/40 p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-widest text-slate-500">Dépensé ce mois</p>
@@ -571,7 +589,8 @@ export default function Ardoise() {
 
         <p className="mt-6 text-center text-xs text-slate-600">
           Données stockées localement dans ton navigateur · {expenses.length} dépense(s) au total
-        </p>
+        </p>}
+
       </div>
 
       {showSettings && (
@@ -592,6 +611,164 @@ export default function Ardoise() {
       {editExpense && (
         <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, patch); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- ForecastView */
+
+function ForecastView({ people, items, onChangePeople, onChangeItems }) {
+  const [newLabel, setNewLabel] = useState("");
+  const [editingPerson, setEditingPerson] = useState(null);
+  const [editingPersonName, setEditingPersonName] = useState("");
+
+  const totalItem = (item) => people.reduce((s, p) => s + (parseFloat(item.shares?.[p.id]) || 0), 0);
+  const totalPerson = (pid) => items.reduce((s, it) => s + (parseFloat(it.shares?.[pid]) || 0), 0);
+  const grandTotal = items.reduce((s, it) => s + totalItem(it), 0);
+
+  const addItem = () => {
+    if (!newLabel.trim()) return;
+    const shares = {};
+    people.forEach((p) => (shares[p.id] = 0));
+    onChangeItems([...items, { id: Date.now().toString(36), label: newLabel.trim(), shares }]);
+    setNewLabel("");
+  };
+
+  const updateShare = (itemId, pid, val) => {
+    onChangeItems(items.map((it) =>
+      it.id === itemId ? { ...it, shares: { ...it.shares, [pid]: val === "" ? "" : parseFloat(val) || 0 } } : it
+    ));
+  };
+
+  const removeItem = (id) => onChangeItems(items.filter((it) => it.id !== id));
+
+  const addPerson = () => {
+    const id = "p" + Date.now().toString(36);
+    const newPeople = [...people, { id, name: "Nouveau" }];
+    onChangePeople(newPeople);
+    onChangeItems(items.map((it) => ({ ...it, shares: { ...it.shares, [id]: 0 } })));
+  };
+
+  const removePerson = (pid) => {
+    onChangePeople(people.filter((p) => p.id !== pid));
+    onChangeItems(items.map((it) => {
+      const s = { ...it.shares };
+      delete s[pid];
+      return { ...it, shares: s };
+    }));
+  };
+
+  const renamePerson = (pid, name) => {
+    onChangePeople(people.map((p) => p.id === pid ? { ...p, name } : p));
+  };
+
+  const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+
+  return (
+    <div className="space-y-6">
+      {/* En-tête */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-slate-500">Dépenses prévisionnelles</p>
+          <p className="mt-0.5 font-mono text-3xl font-semibold tabular-nums text-slate-50">
+            {fmtEUR.format(grandTotal)}
+            <span className="ml-2 text-sm font-normal text-slate-500">/ mois</span>
+          </p>
+        </div>
+        <button onClick={addPerson}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition hover:border-slate-500 hover:text-slate-200">
+          <UserPlus size={13} /> Ajouter une personne
+        </button>
+      </div>
+
+      {/* Tableau */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+        <table className="w-full min-w-max text-sm">
+          <thead>
+            <tr className="border-b border-slate-800">
+              <th className="py-3 pl-4 pr-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Dépense</th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Total</th>
+              {people.map((p) => (
+                <th key={p.id} className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-400">
+                  <div className="flex items-center justify-end gap-1.5">
+                    {editingPerson === p.id ? (
+                      <input autoFocus value={editingPersonName}
+                        onChange={(e) => setEditingPersonName(e.target.value)}
+                        onBlur={() => { renamePerson(p.id, editingPersonName || p.name); setEditingPerson(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { renamePerson(p.id, editingPersonName || p.name); setEditingPerson(null); } }}
+                        className="w-20 rounded border border-emerald-600 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 outline-none" />
+                    ) : (
+                      <button onClick={() => { setEditingPerson(p.id); setEditingPersonName(p.name); }}
+                        className="flex items-center gap-1 hover:text-slate-200">
+                        {p.name} <Pencil size={11} className="opacity-40" />
+                      </button>
+                    )}
+                    {people.length > 1 && (
+                      <button onClick={() => removePerson(p.id)} className="text-slate-700 hover:text-rose-400"><X size={13} /></button>
+                    )}
+                  </div>
+                </th>
+              ))}
+              <th className="w-8 py-3 pr-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60">
+            {items.length === 0 && (
+              <tr><td colSpan={people.length + 3} className="py-10 text-center text-xs text-slate-600">Aucune dépense fixe. Ajoute une ligne ci-dessous.</td></tr>
+            )}
+            {items.map((item) => (
+              <tr key={item.id} className="group hover:bg-slate-800/30">
+                <td className="py-2 pl-4 pr-2 font-medium text-slate-200">{item.label}</td>
+                <td className="px-3 py-2 text-right font-mono text-slate-300 tabular-nums">
+                  {fmtEUR.format(totalItem(item))}
+                </td>
+                {people.map((p) => (
+                  <td key={p.id} className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={item.shares?.[p.id] ?? 0}
+                        onChange={(e) => updateShare(item.id, p.id, e.target.value)}
+                        className="w-24 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500"
+                      />
+                      <span className="text-xs text-slate-600">€</span>
+                    </div>
+                  </td>
+                ))}
+                <td className="pr-3 py-2">
+                  <button onClick={() => removeItem(item.id)} className="text-slate-700 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
+                    <Trash2 size={15} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t-2 border-slate-700">
+            <tr className="bg-slate-900/80">
+              <td className="py-3 pl-4 pr-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Total</td>
+              <td className="px-3 py-3 text-right font-mono font-semibold text-slate-200 tabular-nums">{fmtEUR.format(grandTotal)}</td>
+              {people.map((p) => (
+                <td key={p.id} className="px-3 py-3 text-right font-mono font-semibold text-emerald-400 tabular-nums">
+                  {fmtEUR.format(totalPerson(p.id))}
+                </td>
+              ))}
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Ajouter une ligne */}
+      <div className="flex gap-2">
+        <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addItem()}
+          placeholder="Nouvelle dépense fixe (ex : Loyer, EDF…)"
+          className="flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
+        <button onClick={addItem} disabled={!newLabel.trim()}
+          className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-40">
+          <Plus size={15} /> Ajouter
+        </button>
+      </div>
     </div>
   );
 }
@@ -869,7 +1046,7 @@ function YearView({ expenses, year, catById }) {
     ...m,
     label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
     ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
-    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0),
   }));
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
   const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
