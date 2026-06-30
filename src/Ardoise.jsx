@@ -623,43 +623,61 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
   const [editingPersonName, setEditingPersonName] = useState("");
 
   const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+  const noSpin = { style: { MozAppearance: "textfield" } };
+  const noSpinCls = "[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
-  // montant d'une personne sur un item = total * (pct / 100)
-  const personAmount = (item, pid) => {
-    const total = parseFloat(item.total) || 0;
-    const pct = parseFloat(item.pcts?.[pid]) || 0;
-    return total * pct / 100;
-  };
+  const personAmount = (item, pid) => (parseFloat(item.total) || 0) * (parseFloat(item.pcts?.[pid]) || 0) / 100;
   const totalPerson = (pid) => items.reduce((s, it) => s + personAmount(it, pid), 0);
   const grandTotal = items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
 
-  const addItem = () => {
-    if (!newLabel.trim()) return;
-    const pcts = {};
-    // répartition équitable par défaut
-    const share = people.length ? Math.round(100 / people.length) : 0;
-    people.forEach((p, i) => (pcts[p.id] = i === people.length - 1 ? 100 - share * (people.length - 1) : share));
-    onChangeItems([...items, { id: Date.now().toString(36), label: newLabel.trim(), total: 0, pcts }]);
-    setNewLabel("");
+  // Quand le % d'une personne change, les autres sont ajustés proportionnellement pour rester à 100 %
+  const applyPct = (it, pid, pct) => {
+    const others = people.filter((p) => p.id !== pid);
+    if (others.length === 0) return { ...it, pcts: { ...it.pcts, [pid]: pct } };
+    const remaining = 100 - pct;
+    const othersSum = others.reduce((s, p) => s + (parseFloat(it.pcts?.[p.id]) || 0), 0);
+    const newPcts = { ...it.pcts, [pid]: pct };
+    others.forEach((p) => {
+      const ratio = othersSum > 0 ? (parseFloat(it.pcts?.[p.id]) || 0) / othersSum : 1 / others.length;
+      newPcts[p.id] = Math.round(ratio * remaining * 100) / 100;
+    });
+    return { ...it, pcts: newPcts };
   };
 
   const updateTotal = (itemId, val) =>
     onChangeItems(items.map((it) => it.id === itemId ? { ...it, total: val === "" ? "" : parseFloat(val) || 0 } : it));
 
   const updatePct = (itemId, pid, val) =>
-    onChangeItems(items.map((it) =>
-      it.id === itemId ? { ...it, pcts: { ...it.pcts, [pid]: val === "" ? "" : parseFloat(val) || 0 } } : it
-    ));
+    onChangeItems(items.map((it) => it.id === itemId ? applyPct(it, pid, val === "" ? 0 : parseFloat(val) || 0) : it));
 
-  // Saisie directe du montant → recalcule le %
-  const updateAmount = (itemId, pid, val) => {
-    const amount = val === "" ? 0 : parseFloat(val) || 0;
+  const updateAmount = (itemId, pid, val) =>
     onChangeItems(items.map((it) => {
       if (it.id !== itemId) return it;
       const total = parseFloat(it.total) || 0;
-      const pct = total > 0 ? Math.round((amount / total) * 10000) / 100 : 0;
-      return { ...it, pcts: { ...it.pcts, [pid]: pct } };
+      const amount = val === "" ? 0 : parseFloat(val) || 0;
+      if (total > 0) {
+        // cas normal : on dérive le % depuis le montant saisi
+        const pct = Math.round((amount / total) * 10000) / 100;
+        return applyPct(it, pid, pct);
+      }
+      // total non renseigné : on dérive le total depuis le montant et le % existant
+      const existingPct = parseFloat(it.pcts?.[pid]) || 0;
+      if (existingPct > 0) {
+        // total = montant / (pct/100), les autres personnes gardent leurs % et voient leur montant calculé automatiquement
+        const newTotal = Math.round((amount / (existingPct / 100)) * 100) / 100;
+        return { ...it, total: newTotal };
+      }
+      // % aussi à 0 : on met cette personne à 100 % et le total = montant
+      return applyPct({ ...it, total: amount }, pid, 100);
     }));
+
+  const addItem = () => {
+    if (!newLabel.trim()) return;
+    const pcts = {};
+    const share = people.length ? Math.round(100 / people.length) : 0;
+    people.forEach((p, i) => (pcts[p.id] = i === people.length - 1 ? 100 - share * (people.length - 1) : share));
+    onChangeItems([...items, { id: Date.now().toString(36), label: newLabel.trim(), total: 0, pcts }]);
+    setNewLabel("");
   };
 
   const removeItem = (id) => onChangeItems(items.filter((it) => it.id !== id));
@@ -678,15 +696,16 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
   const renamePerson = (pid, name) =>
     onChangePeople(people.map((p) => p.id === pid ? { ...p, name } : p));
 
+  const inputCls = (color) =>
+    `w-20 rounded border bg-slate-950 px-2 py-1 text-right font-mono text-xs outline-none focus:border-emerald-500 ${noSpinCls} ${color}`;
+
   return (
     <div className="space-y-6">
-      {/* En-tête */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-widest text-slate-500">Dépenses prévisionnelles</p>
           <p className="mt-0.5 font-mono text-3xl font-semibold tabular-nums text-slate-50">
-            {fmtEUR.format(grandTotal)}
-            <span className="ml-2 text-sm font-normal text-slate-500">/ mois</span>
+            {fmtEUR.format(grandTotal)}<span className="ml-2 text-sm font-normal text-slate-500">/ mois</span>
           </p>
         </div>
         <button onClick={addPerson}
@@ -695,15 +714,15 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
         </button>
       </div>
 
-      {/* Tableau */}
       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
-        <table className="w-full min-w-max text-sm">
+        <table className="w-full min-w-max text-sm border-collapse">
           <thead>
+            {/* Ligne 1 : noms des personnes sur 2 colonnes chacune */}
             <tr className="border-b border-slate-800">
-              <th className="py-3 pl-4 pr-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Dépense</th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Prix total</th>
-              {people.map((p) => (
-                <th key={p.id} className="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider text-slate-400">
+              <th rowSpan={2} className="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 border-r border-slate-800">Dépense</th>
+              <th rowSpan={2} className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500 border-r border-slate-800">Prix total</th>
+              {people.map((p, i) => (
+                <th key={p.id} colSpan={2} className={`px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-slate-400 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
                   <div className="flex items-center justify-center gap-1.5">
                     {editingPerson === p.id ? (
                       <input autoFocus value={editingPersonName}
@@ -717,54 +736,61 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                         {p.name} <Pencil size={11} className="opacity-40" />
                       </button>
                     )}
-                    {people.length > 1 && (
-                      <button onClick={() => removePerson(p.id)} className="text-slate-700 hover:text-rose-400"><X size={13} /></button>
-                    )}
+                    {people.length > 1 && <button onClick={() => removePerson(p.id)} className="text-slate-700 hover:text-rose-400"><X size={13} /></button>}
                   </div>
                 </th>
               ))}
-              <th className="w-8 py-3 pr-3" />
+              <th rowSpan={2} className="w-8" />
+            </tr>
+            {/* Ligne 2 : sous-colonnes % et € */}
+            <tr className="border-b border-slate-800">
+              {people.map((p, i) => (
+                <React.Fragment key={p.id}>
+                  <th className="px-2 py-1.5 text-center text-xs font-normal text-slate-600">%</th>
+                  <th className={`px-2 py-1.5 text-center text-xs font-normal text-slate-600 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>€</th>
+                </React.Fragment>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
             {items.length === 0 && (
-              <tr><td colSpan={people.length + 3} className="py-10 text-center text-xs text-slate-600">Aucune dépense fixe. Ajoute une ligne ci-dessous.</td></tr>
+              <tr><td colSpan={2 + people.length * 2 + 1} className="py-10 text-center text-xs text-slate-600">Aucune dépense fixe. Ajoute une ligne ci-dessous.</td></tr>
             )}
             {items.map((item) => (
               <tr key={item.id} className="group hover:bg-slate-800/30">
-                <td className="py-2 pl-4 pr-2 font-medium text-slate-200">{item.label}</td>
-                {/* Prix total */}
-                <td className="px-3 py-2">
+                <td className="py-2 pl-4 pr-3 font-medium text-slate-200 border-r border-slate-800">{item.label}</td>
+                <td className="px-3 py-2 border-r border-slate-800">
                   <div className="flex items-center justify-end gap-1">
-                    <input type="number" min="0" step="0.01"
+                    <input type="number" min="0" step="0.01" {...noSpin}
                       value={item.total ?? 0}
                       onChange={(e) => updateTotal(item.id, e.target.value)}
-                      className="w-24 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500" />
+                      className={inputCls("border-slate-700 text-slate-200")} />
                     <span className="text-xs text-slate-600">€</span>
                   </div>
                 </td>
-                {/* % et montant par personne — les deux sont éditables et se synchronisent */}
-                {people.map((p) => (
-                  <td key={p.id} className="px-2 py-1.5">
-                    <div className="flex flex-col gap-1">
+                {people.map((p, i) => (
+                  <React.Fragment key={p.id}>
+                    <td className="px-2 py-2">
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" max="100" step="0.01"
-                          value={item.pcts?.[p.id] ?? 0}
+                        <input type="number" min="0" max="100" step="0.01" {...noSpin}
+                          value={Math.round((parseFloat(item.pcts?.[p.id]) || 0) * 100) / 100}
                           onChange={(e) => updatePct(item.id, p.id, e.target.value)}
-                          className="w-16 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500" />
+                          className={inputCls("border-slate-700 text-slate-300")} />
                         <span className="text-xs text-slate-600">%</span>
                       </div>
+                    </td>
+                    <td className={`px-2 py-2 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" step="0.01"
+                        <input type="number" min="0" step="0.01" {...noSpin}
                           value={Math.round(personAmount(item, p.id) * 100) / 100}
                           onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
-                          className="w-16 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-right font-mono text-xs text-emerald-400 outline-none focus:border-emerald-500" />
+                          className={inputCls("border-slate-700 text-emerald-400")} />
                         <span className="text-xs text-slate-600">€</span>
                       </div>
-                    </div>
-                  </td>
+                    </td>
+                  </React.Fragment>
                 ))}
-                <td className="pr-3 py-2">
+                <td className="px-2 py-2">
                   <button onClick={() => removeItem(item.id)} className="text-slate-700 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
                     <Trash2 size={15} />
                   </button>
@@ -774,12 +800,15 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
           </tbody>
           <tfoot className="border-t-2 border-slate-700">
             <tr className="bg-slate-900/80">
-              <td className="py-3 pl-4 pr-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Total</td>
-              <td className="px-3 py-3 text-right font-mono font-semibold text-slate-200 tabular-nums">{fmtEUR.format(grandTotal)}</td>
-              {people.map((p) => (
-                <td key={p.id} className="px-3 py-3 text-center">
-                  <span className="font-mono font-semibold text-emerald-400 tabular-nums">{fmtEUR.format(totalPerson(p.id))}</span>
-                </td>
+              <td className="py-3 pl-4 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 border-r border-slate-800">Total</td>
+              <td className="px-3 py-3 text-right font-mono font-semibold text-slate-200 tabular-nums border-r border-slate-800">{fmtEUR.format(grandTotal)}</td>
+              {people.map((p, i) => (
+                <React.Fragment key={p.id}>
+                  <td className="px-2 py-3" />
+                  <td className={`px-2 py-3 text-right font-mono font-semibold text-emerald-400 tabular-nums ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
+                    {fmtEUR.format(totalPerson(p.id))}
+                  </td>
+                </React.Fragment>
               ))}
               <td />
             </tr>
