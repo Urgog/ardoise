@@ -32,11 +32,26 @@ export function guessCat(label) {
   return "autre";
 }
 
+// Normalise pour le matching : minuscules + suppression des accents.
+const normMatch = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// Échappe les caractères spéciaux regex d'un mot.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Extrait les mots significatifs (>= 3 lettres) d'un pattern de règle.
+const patternWords = (pattern) =>
+  normMatch(pattern).split(/\s+/).filter((w) => w.length >= 3);
+
+// Nombre de mots du pattern présents dans le libellé, en match par MOT ENTIER
+// (frontières de mot), pas par sous-chaîne. Évite que "vir" matche "ouvrir", etc.
+const countWordMatches = (normLabel, words) =>
+  words.filter((w) => new RegExp(`\\b${escapeRe(w)}\\b`).test(normLabel)).length;
+
 // Applique d'abord les règles utilisateur, puis les règles par défaut.
-// Matching par mots individuels : une règle matche si AU MOINS UN de ses mots est présent.
-// En cas de plusieurs règles qui matchent, on prend celle avec le plus de mots trouvés (plus spécifique).
+// Une règle matche si au moins un de ses mots (>= 3 lettres) apparaît comme mot
+// entier dans le libellé. Plusieurs règles : on garde celle avec le plus de mots
+// trouvés, puis la plus spécifique (pattern le plus long).
 export function guessCatWithRules(label, userRules = []) {
-  const l = (label || "").toLowerCase();
+  const l = normMatch(label);
 
   let bestCat = null;
   let bestScore = 0;
@@ -44,10 +59,10 @@ export function guessCatWithRules(label, userRules = []) {
 
   for (const { pattern, categoryId } of userRules) {
     if (!pattern) continue;
-    const words = pattern.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
-    const matches = words.filter((w) => l.includes(w)).length;
+    const words = patternWords(pattern);
+    if (!words.length) continue;
+    const matches = countWordMatches(l, words);
     if (matches === 0) continue;
-    // Priorité : plus de mots matchés > plus de mots dans le pattern (plus spécifique)
     if (matches > bestScore || (matches === bestScore && words.length > bestWordCount)) {
       bestScore = matches;
       bestWordCount = words.length;
@@ -59,10 +74,15 @@ export function guessCatWithRules(label, userRules = []) {
   return guessCat(label);
 }
 
-// Retourne true si au moins une règle utilisateur matche le libellé.
+// Retourne true si au moins une règle utilisateur matche le libellé (même logique
+// de match par mot entier que guessCatWithRules).
 export function hasUserRuleMatch(label, userRules = []) {
-  const l = (label || "").toLowerCase();
-  return userRules.some(({ pattern }) => pattern && l.includes(pattern.toLowerCase()));
+  const l = normMatch(label);
+  return userRules.some(({ pattern }) => {
+    if (!pattern) return false;
+    const words = patternWords(pattern);
+    return words.length > 0 && countWordMatches(l, words) > 0;
+  });
 }
 
 /* ------------------------------------------------ helpers de parsing */

@@ -28,6 +28,20 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 /* ---------------------------------------------------------------- extraction pattern bancaire */
 
+// Mots trop génériques / bancaires : présents dans beaucoup de dépenses sans
+// rapport, ils ne doivent jamais devenir des mots-clés de règle (sinon une règle
+// sur-matche). Filtrés quelle que soit leur position dans le libellé.
+const STOPWORDS = new Set([
+  "paiement", "paiements", "paie", "paye", "payment",
+  "cb", "carte", "cartes", "bleue", "credit", "debit",
+  "virement", "virements", "vir", "prelevement", "prelevements", "prel", "prlv",
+  "sepa", "achat", "achats", "retrait", "retraits", "dab", "gab", "web", "inst",
+  "mandat", "cheque", "cheques", "recu", "emis", "emise", "vers", "faveur", "votre",
+  "compte", "comptes", "operation", "operations", "frais", "avoir", "remise",
+  "cotisation", "cotisations", "commission", "commissions", "interet", "interets",
+  "mensuel", "mensuelle", "echeance", "reference",
+]);
+
 const extractPattern = (label) => {
   let s = label.toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -50,7 +64,7 @@ const extractPattern = (label) => {
   s = s.replace(/\b(sarl|sas|eurl|spa|inc|ltd|groupe|group|agence|magasin|boutique|store|market|france|paris|lyon|marseille|bordeaux|lille|nantes|strasbourg|metz|toulouse)\b/g, "");
   s = s.replace(/\s+/g, " ").trim();
 
-  const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w));
+  const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w) && !STOPWORDS.has(w));
   const pattern = words.slice(0, 3).join(" ").trim();
   return pattern.length >= 3 ? pattern : null;
 };
