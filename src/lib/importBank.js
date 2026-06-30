@@ -255,10 +255,24 @@ export function importBankQIF(file) {
 
 /* ------------------------------------------------ API publique */
 
+// Détecte le séparateur en comptant les candidats sur tout le texte.
+// PapaParse devine sur les ~10 premières lignes seulement : insuffisant quand
+// le relevé commence par un long préambule (cas Crédit Agricole).
+function detectDelimiter(text) {
+  const sample = text.slice(0, 50000);
+  const candidates = [";", ",", "\t", "|"];
+  let best = ";", bestCount = -1;
+  for (const d of candidates) {
+    const count = sample.split(d).length - 1;
+    if (count > bestCount) { bestCount = count; best = d; }
+  }
+  return bestCount > 0 ? best : ";";
+}
+
 function parseCSVText(text, resolve) {
   Papa.parse(text, {
     skipEmptyLines: true,
-    delimiter: "",
+    delimiter: detectDelimiter(text),
     complete: (res) => {
       const rows = (res.data || []).filter((r) => Array.isArray(r) && r.length >= 2);
       const headerRow = findHeader(rows);
