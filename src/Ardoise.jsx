@@ -136,6 +136,24 @@ const resolveBankCategory = (bankCat, bankSubCat, cats) => {
   return cats.some((c) => c.id === token) ? { categoryId: token } : null;
 };
 
+/* ---------------------------------------------------------------- nettoyage des règles */
+
+// Retire les mots interdits (STOPWORDS) et trop courts des patterns de règles
+// déjà enregistrées ; supprime les règles devenues vides. Corrige les règles
+// apprises avant l'ajout du filtrage.
+const sanitizeRules = (rules = []) =>
+  rules
+    .map((r) => {
+      if (!r || !r.pattern) return null;
+      const words = r.pattern.split(/\s+/).filter((w) => {
+        const n = normCat(w);
+        return n.length >= 3 && !STOPWORDS.has(n);
+      });
+      const pattern = words.join(" ").trim();
+      return pattern ? { ...r, pattern } : null;
+    })
+    .filter(Boolean);
+
 /* ---------------------------------------------------------------- palette couleurs */
 
 const PALETTE = [
@@ -239,7 +257,7 @@ export default function Ardoise() {
         }
         if (d.expenses) setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
-        if (d.rules) setRules(d.rules);
+        if (d.rules) setRules(sanitizeRules(d.rules));
         if (d.forecastPeople?.length) setForecastPeople(d.forecastPeople);
         if (d.forecastItems) setForecastItems(d.forecastItems);
       } catch { /* ignore */ }
@@ -401,7 +419,7 @@ export default function Ardoise() {
         if (d.categories?.length) setCats(d.categories);
         setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
-        if (d.rules) setRules(d.rules);
+        if (d.rules) setRules(sanitizeRules(d.rules));
         if (d.forecastPeople?.length) setForecastPeople(d.forecastPeople);
         if (d.forecastItems) setForecastItems(d.forecastItems);
         alert("Restauration réussie.");
