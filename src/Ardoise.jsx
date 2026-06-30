@@ -82,7 +82,12 @@ export default function Ardoise() {
     if (r && r.value) {
       try {
         const d = JSON.parse(r.value);
-        if (d.categories?.length) setCats(d.categories);
+        if (d.categories?.length) {
+          const saved = d.categories;
+          const savedIds = new Set(saved.map((c) => c.id));
+          const missingBuiltins = DEFAULT_CATS.filter((c) => c.builtin && !savedIds.has(c.id));
+          setCats([...saved, ...missingBuiltins]);
+        }
         if (d.expenses) setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
         if (d.rules) setRules(d.rules);
