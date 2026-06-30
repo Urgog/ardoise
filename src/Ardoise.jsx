@@ -104,8 +104,9 @@ const BANK_TO_CAT = {
   "revenus professionnels": "revenus", "revenus de placement": "revenus", "revenus exceptionnels": "revenus",
   "autres revenus": "revenus", "salaire / prime": "revenus", "retraites": "revenus",
   "allocations": "revenus", "revenu foncier": "revenus",
-  // transferts internes
-  "virements internes": "inter-comptes", "hors budget": "inter-comptes",
+  // transferts internes : SEULE la sous-catégorie "Virements internes" → inter-comptes.
+  // "Hors budget" (catégorie parente) ne doit pas forcer inter-comptes par lui-même.
+  "virements internes": "inter-comptes", "virement interne": "inter-comptes", "hors budget": "@defer",
   // frais bancaires → catégorie utilisateur (résolu par mot-clé)
   "frais bancaires": "@frais",
   // à catégoriser → revue par l'utilisateur
@@ -121,13 +122,12 @@ const BANK_TO_CAT = {
 
 // Résout une catégorie banque vers une catégorie Ardoise existante.
 // Renvoie { categoryId } | { review: true } | null (= ambigu, déléguer aux règles).
-// Préfère un mapping concret (sous-catégorie ou catégorie) ; sinon "à catégoriser".
+// La sous-catégorie (niveau fin) est AUTORITAIRE : la catégorie parente ne sert
+// que si la sous-catégorie n'a aucune correspondance. Évite qu'un parent comme
+// "Hors budget" écrase l'intention d'une sous-catégorie (ex. "Virements" externe).
 const resolveBankCategory = (bankCat, bankSubCat, cats) => {
-  const tokens = [BANK_TO_CAT[normCat(bankSubCat)], BANK_TO_CAT[normCat(bankCat)]].filter(Boolean);
-  if (!tokens.length) return null;
-  const token = tokens.find((t) => t !== "@defer" && t !== "@review")
-    ?? tokens.find((t) => t === "@review") ?? "@defer";
-  if (token === "@defer") return null;
+  const token = BANK_TO_CAT[normCat(bankSubCat)] ?? BANK_TO_CAT[normCat(bankCat)];
+  if (!token || token === "@defer") return null;
   if (token === "@review") return { review: true };
   if (token === "@frais") {
     const found = cats.find((c) => /frais|bancaire|banque/i.test(c.label));
@@ -139,12 +139,13 @@ const resolveBankCategory = (bankCat, bankSubCat, cats) => {
 /* ---------------------------------------------------------------- nettoyage des règles */
 
 // Retire les mots interdits (STOPWORDS) et trop courts des patterns de règles
-// déjà enregistrées ; supprime les règles devenues vides. Corrige les règles
-// apprises avant l'ajout du filtrage.
+// déjà enregistrées ; supprime les règles devenues vides. Supprime aussi les
+// règles pointant vers "inter-comptes" : cette catégorie ne doit venir QUE de la
+// sous-catégorie banque "Virements internes", jamais d'une règle de mot-clé.
 const sanitizeRules = (rules = []) =>
   rules
     .map((r) => {
-      if (!r || !r.pattern) return null;
+      if (!r || !r.pattern || r.categoryId === "inter-comptes") return null;
       const words = r.pattern.split(/\s+/).filter((w) => {
         const n = normCat(w);
         return n.length >= 3 && !STOPWORDS.has(n);
@@ -380,7 +381,9 @@ export default function Ardoise() {
         next = next.filter((r) => !(r.categoryId === oldCat && ruleMatchesLabel(target.label, r.pattern)));
       }
       // Apprentissage : ajoute / met à jour la règle vers la bonne catégorie.
-      if (pattern) {
+      // Exception : on n'apprend JAMAIS de règle vers "inter-comptes" — cette
+      // catégorie ne doit venir que de la sous-catégorie banque "Virements internes".
+      if (pattern && categoryId !== "inter-comptes") {
         const i = next.findIndex((r) => r.pattern.toLowerCase() === pattern);
         if (i >= 0) {
           next = next.map((r, idx) => (idx === i ? { ...r, categoryId } : r));
