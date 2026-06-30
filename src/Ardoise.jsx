@@ -190,8 +190,29 @@ export default function Ardoise() {
     setExpenses([]);
   };
 
-  const updateCat = (id, categoryId) =>
-    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId } : e)));
+  const updateCat = (id, categoryId) => {
+    // Marque la dépense comme catégorisée manuellement + apprend une règle automatiquement
+    setExpenses((x) => x.map((e) => {
+      if (e.id !== id) return e;
+      // Apprentissage auto : extrait un pattern du libellé et ajoute une règle utilisateur
+      const pattern = e.label.trim().toLowerCase()
+        .replace(/^(vir(ement)?(\s+sepa)?|cb|prlv|prelevement|paiement|achat|retrait)\s+/i, "")
+        .split(/\s+/).slice(0, 3).join(" ")
+        .trim();
+      if (pattern.length >= 3) {
+        setRules((prev) => {
+          const already = prev.findIndex((r) => r.pattern.toLowerCase() === pattern);
+          if (already >= 0) {
+            const updated = [...prev];
+            updated[already] = { ...updated[already], categoryId };
+            return updated;
+          }
+          return [...prev, { pattern, categoryId }];
+        });
+      }
+      return { ...e, categoryId, manualCat: true };
+    }));
+  };
 
   const updateExpense = (id, patch) =>
     setExpenses((x) => x.map((e) => (e.id === id ? { ...e, ...patch } : e)));
@@ -605,6 +626,7 @@ export default function Ardoise() {
           onChangeRules={(newRules) => {
             setRules(newRules);
             setExpenses((x) => x.map((e) => {
+              if (e.manualCat) return e; // catégorie choisie manuellement : ne pas écraser
               const guessed = guessCatWithRules(e.label, newRules);
               return guessed ? { ...e, categoryId: guessed } : e;
             }));
@@ -614,7 +636,7 @@ export default function Ardoise() {
         />
       )}
       {editExpense && (
-        <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, patch); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
+        <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, { ...patch, manualCat: true }); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
       )}
     </div>
   );
