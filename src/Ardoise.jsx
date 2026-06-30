@@ -173,13 +173,8 @@ export default function Ardoise() {
   const removeExpense = (id) => setExpenses((x) => x.filter((e) => e.id !== id));
 
   const resetData = () => {
-    if (!window.confirm("Remettre à zéro toutes les données ? Cette action est irréversible.")) return;
+    if (!window.confirm("Supprimer toutes les dépenses ? Les catégories, budgets et règles sont conservés. Cette action est irréversible.")) return;
     setExpenses([]);
-    setCats(DEFAULT_CATS);
-    setBudgets({});
-    setRules([]);
-    storage.remove(KEY);
-    setShowSettings(false);
   };
 
   const updateCat = (id, categoryId) =>
