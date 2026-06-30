@@ -655,8 +655,20 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
       if (it.id !== itemId) return it;
       const total = parseFloat(it.total) || 0;
       const amount = val === "" ? 0 : parseFloat(val) || 0;
-      const pct = total > 0 ? Math.round((amount / total) * 10000) / 100 : 0;
-      return applyPct(it, pid, pct);
+      if (total > 0) {
+        // cas normal : on dérive le % depuis le montant saisi
+        const pct = Math.round((amount / total) * 10000) / 100;
+        return applyPct(it, pid, pct);
+      }
+      // total non renseigné : on dérive le total depuis le montant et le % existant
+      const existingPct = parseFloat(it.pcts?.[pid]) || 0;
+      if (existingPct > 0) {
+        // total = montant / (pct/100), les autres personnes gardent leurs % et voient leur montant calculé automatiquement
+        const newTotal = Math.round((amount / (existingPct / 100)) * 100) / 100;
+        return { ...it, total: newTotal };
+      }
+      // % aussi à 0 : on met cette personne à 100 % et le total = montant
+      return applyPct({ ...it, total: amount }, pid, 100);
     }));
 
   const addItem = () => {
