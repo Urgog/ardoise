@@ -36,7 +36,8 @@ const DEFAULT_CATS = [
   { id: "abonnements", label: "Abonnements", color: "#2DD4BF", builtin: true },
   { id: "shopping", label: "Shopping", color: "#FB923C", builtin: true },
   { id: "autre", label: "Autre", color: "#94A3B8", builtin: true },
-  { id: "virements", label: "Virements", color: "#64748B", builtin: true, excludeFromTotal: true },
+  { id: "revenus", label: "Revenus", color: "#34D399", builtin: true },
+  { id: "inter-comptes", label: "Inter-comptes", color: "#64748B", builtin: true, excludeFromTotal: true },
 ];
 
 const ICONS = {
