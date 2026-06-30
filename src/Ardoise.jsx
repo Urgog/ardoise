@@ -106,7 +106,7 @@ export default function Ardoise() {
     () => expenses.filter((e) => monthOf(e.date) === month),
     [expenses, month]
   );
-  const monthTotal = useMemo(() => monthExp.reduce((s, e) => s + e.amount, 0), [monthExp]);
+  const monthTotal = useMemo(() => monthExp.reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp]);
 
   const prevMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -114,14 +114,14 @@ export default function Ardoise() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, [month]);
   const prevTotal = useMemo(
-    () => expenses.filter((e) => monthOf(e.date) === prevMonth).reduce((s, e) => s + e.amount, 0),
+    () => expenses.filter((e) => monthOf(e.date) === prevMonth).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
     [expenses, prevMonth]
   );
   const delta = prevTotal ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
 
   const byCat = useMemo(() => {
     const m = {};
-    monthExp.forEach((e) => (m[e.categoryId] = (m[e.categoryId] || 0) + e.amount));
+    monthExp.filter((e) => !e.isCredit).forEach((e) => (m[e.categoryId] = (m[e.categoryId] || 0) + e.amount));
     return Object.entries(m)
       .map(([id, value]) => ({ id, value, ...(catById[id] || { label: id, color: "#94A3B8" }) }))
       .sort((a, b) => b.value - a.value);
@@ -135,7 +135,7 @@ export default function Ardoise() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const total = expenses.filter((e) => monthOf(e.date) === ym).reduce((s, e) => s + e.amount, 0);
+      const total = expenses.filter((e) => monthOf(e.date) === ym).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
       out.push({ ym, total, lbl: d.toLocaleDateString("fr-FR", { month: "short" }), cur: ym === month });
     }
     return out;
@@ -543,7 +543,9 @@ export default function Ardoise() {
                           )}
                         </p>
                       </div>
-                      <span className="font-mono text-sm tabular-nums text-rose-400">−{fmtEUR.format(e.amount)}</span>
+                      <span className={`font-mono text-sm tabular-nums ${e.isCredit ? "text-emerald-400" : "text-rose-400"}`}>
+                        {e.isCredit ? "+" : "−"}{fmtEUR.format(e.amount)}
+                      </span>
                       <button onClick={() => setEditExpense(e)}
                         className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-emerald-400">
                         <Pencil size={15} />
@@ -843,7 +845,7 @@ function YearView({ expenses, year, catById }) {
     const m = String(i + 1).padStart(2, "0");
     const ym = `${year}-${m}`;
     const exps = expenses.filter((e) => e.date.startsWith(ym));
-    const total = exps.reduce((s, e) => s + e.amount, 0);
+    const total = exps.reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
     const label = new Date(+year, i, 1).toLocaleDateString("fr-FR", { month: "short" });
     return { ym, label, total, exps };
   });
@@ -855,7 +857,7 @@ function YearView({ expenses, year, catById }) {
     ...m,
     label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
     ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
-    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`)).reduce((s, e) => s + e.amount, 0),
+    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`)).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
   }));
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
   const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
