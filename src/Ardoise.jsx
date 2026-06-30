@@ -92,9 +92,12 @@ const BANK_TO_CAT = {
   // shopping
   "shopping": "shopping", "habillement": "shopping", "achats high tech": "shopping",
   "equipement / ameublement": "shopping", "soin du corps / coiffeur / cosmetique": "shopping",
-  // abonnements / numérique / télécom
+  // abonnements / télécom (catégories banque fiables)
   "internet (ou triple play)": "abonnements", "abonnements tv": "abonnements",
-  "telephonie mobile": "abonnements", "numerique": "abonnements", "numerique, divers": "abonnements",
+  "telephonie mobile": "abonnements",
+  // "Numérique" est trop large (Amazon, Netflix, Steam, Apple...) : on délègue aux
+  // règles/libellé plutôt que de tout forcer en abonnements.
+  "numerique": "@defer", "numerique, divers": "@defer",
   // logement
   "logement / maison": "logement", "loyer / charges": "logement",
   "energies / eau": "logement", "entretien / bricolage": "logement", "entretien": "logement",

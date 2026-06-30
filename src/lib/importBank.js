@@ -15,15 +15,18 @@ import Papa from "papaparse";
 
 /* ------------------------------------------------ auto-catégorisation */
 
+// Frontières de mot \b sur les termes courts qui matcheraient sinon en sous-chaîne
+// dans des mots sans rapport (ex. "eau" → bordeaux/roulleau, "station" → prestations,
+// "tan" → instantané, "prime" → primeur, "action" → transaction).
 const RULES = [
-  [/carrefour|leclerc|auchan|lidl|intermarch|monoprix|franprix|super\s?u|casino|biocoop|grand frais|aldi|netto/i, "alimentation"],
-  [/loyer|edf|engie|gaz|eau|veolia|suez|syndic|assurance hab|foncia/i, "logement"],
-  [/sncf|ratp|uber(?!\s?eats)|\bbus\b|metro|essence|total|esso|\bbp\b|station|peage|autoroute|navigo|blablacar|velib|tan\b/i, "transport"],
+  [/carrefour|leclerc|auchan|lidl|intermarch|monoprix|franprix|super\s?u|\bcasino\b|biocoop|grand frais|\baldi\b|\bnetto\b/i, "alimentation"],
+  [/loyer|edf|engie|\bgaz\b|\beaux?\b|veolia|suez|syndic|assurance hab|foncia/i, "logement"],
+  [/sncf|ratp|uber(?!\s?eats)|\bbus\b|\bmetro\b|essence|\btotal|\besso\b|\bbp\b|\bstation\b|peage|autoroute|navigo|blablacar|velib|\btan\b/i, "transport"],
   [/restaurant|mcdo|mc do|burger|kfc|pizza|deliveroo|just eat|uber\s?eats|boulangerie|brasserie|\bbar\b|sushi|tacos/i, "restaurants"],
   [/pharmacie|docteur|medecin|mutuelle|dentiste|optic|hopital|laboratoire|\bkine\b/i, "sante"],
-  [/fnac|amazon|darty|zalando|decathlon|leroy merlin|ikea|action|gifi|cdiscount|zara|h&m/i, "shopping"],
-  [/cinema|theatre|concert|steam|playstation|nintendo|spotify|deezer|netflix|disney|canal|twitch/i, "loisirs"],
-  [/free\b|orange|sfr|bouygues|sosh|abonnement|prime|icloud|google one|github|adobe|openai|anthropic/i, "abonnements"],
+  [/fnac|amazon|darty|zalando|decathlon|leroy merlin|ikea|\baction\b|gifi|cdiscount|zara|h&m/i, "shopping"],
+  [/cinema|theatre|concert|steam|playstation|nintendo|spotify|deezer|netflix|disney|\bcanal\b|twitch/i, "loisirs"],
+  [/\bfree\b|freebox|orange|sfr|bouygues|sosh|abonnement|\bprime\b|icloud|google one|github|adobe|openai|anthropic/i, "abonnements"],
 ];
 
 export function guessCat(label) {
