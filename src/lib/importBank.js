@@ -59,6 +59,12 @@ export function guessCatWithRules(label, userRules = []) {
   return guessCat(label);
 }
 
+// Retourne true si au moins une règle utilisateur matche le libellé.
+export function hasUserRuleMatch(label, userRules = []) {
+  const l = (label || "").toLowerCase();
+  return userRules.some(({ pattern }) => pattern && l.includes(pattern.toLowerCase()));
+}
+
 /* ------------------------------------------------ helpers de parsing */
 
 const toNumber = (raw) => {

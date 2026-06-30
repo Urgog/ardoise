@@ -10,7 +10,7 @@ import {
   Settings, RotateCcw, ClipboardList, UserPlus, Users,
 } from "lucide-react";
 import { storage } from "./lib/storage";
-import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules } from "./lib/importBank";
+import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch } from "./lib/importBank";
 
 /* ---------------------------------------------------------------- utilitaires */
 
@@ -168,6 +168,17 @@ export default function Ardoise() {
     storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
   }, [expenses, cats, budgets, rules, forecastPeople, forecastItems, loaded]);
 
+  // Reclassifie les dépenses en "Autre" sans manualCat quand les règles changent ou au démarrage
+  useEffect(() => {
+    if (!loaded) return;
+    setExpenses((prev) => prev.map((e) => {
+      if (e.manualCat || e.categoryId !== "autre") return e;
+      const categoryId = guessCatWithRules(e.label, rules);
+      const needsReview = categoryId === "autre";
+      return { ...e, categoryId, needsReview };
+    }));
+  }, [rules, loaded]);
+
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
   const months = useMemo(() => {
@@ -218,7 +229,7 @@ export default function Ardoise() {
 
   const visible = useMemo(() => {
     return monthExp
-      .filter((e) => filterCat === "all" || e.categoryId === filterCat)
+      .filter((e) => filterCat === "all" ? true : filterCat === "__review__" ? e.needsReview : e.categoryId === filterCat)
       .filter((e) => !query || e.label.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [monthExp, filterCat, query]);
@@ -269,7 +280,7 @@ export default function Ardoise() {
           return [...prev, { pattern, categoryId }];
         });
       }
-      return { ...e, categoryId, manualCat: true };
+      return { ...e, categoryId, manualCat: true, needsReview: false };
     }));
   };
 
@@ -331,7 +342,11 @@ export default function Ardoise() {
       else if (ext === "qif") parsed = await importBankQIF(file);
       else parsed = await importBankCSV(file);
       // applique les règles utilisateur par-dessus l'auto-cat
-      parsed = parsed.map((e) => ({ ...e, categoryId: guessCatWithRules(e.label, rules) || e.categoryId }));
+      parsed = parsed.map((e) => {
+        const categoryId = guessCatWithRules(e.label, rules) || e.categoryId;
+        const needsReview = categoryId === "autre" && !hasUserRuleMatch(e.label, rules);
+        return { ...e, categoryId, ...(needsReview ? { needsReview: true } : {}) };
+      });
       if (!parsed.length) {
         alert("Aucune dépense détectée. Vérifie que le fichier contient une colonne date et une colonne montant ou débit.");
         return;
@@ -602,6 +617,18 @@ export default function Ardoise() {
             </section>
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+              {(() => {
+                const toReview = monthExp.filter((e) => e.needsReview);
+                return toReview.length > 0 && (
+                  <button
+                    onClick={() => setFilterCat("__review__")}
+                    className="mb-4 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-300 hover:bg-amber-500/20 transition"
+                  >
+                    <AlertTriangle size={14} className="shrink-0" />
+                    <span><strong>{toReview.length}</strong> dépense{toReview.length > 1 ? "s" : ""} sans catégorie claire — clique pour les catégoriser</span>
+                  </button>
+                );
+              })()}
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-medium text-slate-300">{visible.length} dépense(s)</h3>
                 <div className="flex flex-wrap items-center gap-2">
@@ -613,6 +640,7 @@ export default function Ardoise() {
                   <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)}
                     className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500">
                     <option value="all">Toutes catégories</option>
+                    <option value="__review__">⚠ À catégoriser</option>
                     {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                   </select>
                 </div>
@@ -622,10 +650,15 @@ export default function Ardoise() {
                 {visible.map((e) => {
                   const c = catById[e.categoryId] || { label: "Autre", color: "#94A3B8", id: "autre" };
                   return (
-                    <li key={e.id} className="group flex items-center gap-3 py-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                    <li key={e.id} className={`group flex items-center gap-3 py-2.5 ${e.needsReview ? "rounded-lg px-2 -mx-2 bg-amber-500/5" : ""}`}>
+                      <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
                         style={{ background: c.color + "22", color: c.color }}>
                         <CatIcon id={c.id} size={17} />
+                        {e.needsReview && (
+                          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500">
+                            <AlertTriangle size={8} className="text-slate-950" />
+                          </span>
+                        )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-slate-200">{e.label}</p>
@@ -645,9 +678,9 @@ export default function Ardoise() {
                           ) : (
                             <button
                               onClick={() => setEditCatId(e.id)}
-                              className="underline decoration-dotted underline-offset-2 hover:text-slate-300"
+                              className={`underline decoration-dotted underline-offset-2 hover:text-slate-300 ${e.needsReview ? "text-amber-400" : ""}`}
                             >
-                              {c.label}
+                              {e.needsReview ? "À catégoriser" : c.label}
                             </button>
                           )}
                         </p>
@@ -688,9 +721,10 @@ export default function Ardoise() {
           onChangeRules={(newRules) => {
             setRules(newRules);
             setExpenses((x) => x.map((e) => {
-              if (e.manualCat) return e; // catégorie choisie manuellement : ne pas écraser
-              const guessed = guessCatWithRules(e.label, newRules);
-              return guessed ? { ...e, categoryId: guessed } : e;
+              if (e.manualCat) return e;
+              const categoryId = guessCatWithRules(e.label, newRules);
+              const needsReview = categoryId === "autre";
+              return { ...e, categoryId, needsReview };
             }));
           }} onExportJSON={exportJSON}
           onImportJSON={() => jsonRef.current?.click()}
