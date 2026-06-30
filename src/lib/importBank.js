@@ -85,6 +85,13 @@ export function hasUserRuleMatch(label, userRules = []) {
   });
 }
 
+// Retourne true si un pattern de règle (seul) matche le libellé.
+export function ruleMatchesLabel(label, pattern) {
+  if (!pattern) return false;
+  const words = patternWords(pattern);
+  return words.length > 0 && countWordMatches(normMatch(label), words) > 0;
+}
+
 /* ------------------------------------------------ helpers de parsing */
 
 const toNumber = (raw) => {
@@ -140,6 +147,10 @@ function colIndexes(header) {
     montant: find("montant"),
     debit: find("debit"),
     credit: find("credit"),
+    // Colonnes "Catégorie" / "Sous-catégorie" de certains exports (ex. Crédit
+    // Agricole) : pré-catégorisation banque, exploitée à l'import.
+    categorie: h.findIndex((c) => c.includes("categorie") && !c.includes("sous")),
+    souscategorie: h.findIndex((c) => c.includes("sous") && c.includes("categorie")),
   };
 }
 
@@ -173,7 +184,16 @@ function rowToExpenseByHeader(row, idx) {
   }
   if (amount == null) return null;
 
-  return { amount, label, categoryId: guessCat(label), date, isCredit };
+  // Catégorie/sous-catégorie banque (brutes) transmises à l'app, qui les fusionne
+  // avec ses propres catégories à l'import (la banque est prioritaire).
+  const bankCat = idx.categorie >= 0 ? String(row[idx.categorie] || "").trim() : "";
+  const bankSubCat = idx.souscategorie >= 0 ? String(row[idx.souscategorie] || "").trim() : "";
+
+  return {
+    amount, label, categoryId: guessCat(label), date, isCredit,
+    ...(bankCat ? { bankCat } : {}),
+    ...(bankSubCat ? { bankSubCat } : {}),
+  };
 }
 
 // Fallback heuristique quand aucune en-tête n'est trouvée : on scanne la ligne.

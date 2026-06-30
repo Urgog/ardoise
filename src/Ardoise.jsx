@@ -10,7 +10,7 @@ import {
   Settings, RotateCcw, ClipboardList, UserPlus, Users, Sun, Moon,
 } from "lucide-react";
 import { storage } from "./lib/storage";
-import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch } from "./lib/importBank";
+import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch, ruleMatchesLabel } from "./lib/importBank";
 
 /* ---------------------------------------------------------------- utilitaires */
 
@@ -67,6 +67,73 @@ const extractPattern = (label) => {
   const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w) && !STOPWORDS.has(w));
   const pattern = words.slice(0, 3).join(" ").trim();
   return pattern.length >= 3 ? pattern : null;
+};
+
+/* ---------------------------------------------------------------- fusion catégories banque */
+
+const normCat = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+// Correspondance des catégories/sous-catégories banque (ex. Crédit Agricole) vers
+// les catégories Ardoise existantes. Valeurs spéciales :
+//   "@review"  → à catégoriser (needsReview)
+//   "@frais"   → résolu vers la catégorie utilisateur évoquant les frais bancaires
+//   "@defer"   → laisser les règles/libellé décider (catégorie banque trop ambiguë)
+const BANK_TO_CAT = {
+  // restauration
+  "sorties / restaurant": "restaurants", "snacks / repas au travail": "restaurants",
+  "cafe / jeux / tabac": "restaurants", "hebergement / restauration": "restaurants",
+  // alimentation
+  "grande surface": "alimentation", "petit commercant": "alimentation", "alimentation": "alimentation",
+  // loisirs
+  "culture": "loisirs", "passion": "loisirs", "sport": "loisirs",
+  "jeux et divertissements": "loisirs", "vacances / weekend": "loisirs", "vacances / weekend, divers": "loisirs",
+  // transport
+  "transport": "transport", "transport / taxi / location": "transport", "vehicule": "transport",
+  // shopping
+  "shopping": "shopping", "habillement": "shopping", "achats high tech": "shopping",
+  "equipement / ameublement": "shopping", "soin du corps / coiffeur / cosmetique": "shopping",
+  // abonnements / numérique / télécom
+  "internet (ou triple play)": "abonnements", "abonnements tv": "abonnements",
+  "telephonie mobile": "abonnements", "numerique": "abonnements", "numerique, divers": "abonnements",
+  // logement
+  "logement / maison": "logement", "loyer / charges": "logement",
+  "energies / eau": "logement", "entretien / bricolage": "logement", "entretien": "logement",
+  // santé
+  "assurances / prevoyance / dependance": "sante",
+  // revenus
+  "revenus professionnels": "revenus", "revenus de placement": "revenus", "revenus exceptionnels": "revenus",
+  "autres revenus": "revenus", "salaire / prime": "revenus", "retraites": "revenus",
+  "allocations": "revenus", "revenu foncier": "revenus",
+  // transferts internes
+  "virements internes": "inter-comptes", "hors budget": "inter-comptes",
+  // frais bancaires → catégorie utilisateur (résolu par mot-clé)
+  "frais bancaires": "@frais",
+  // à catégoriser → revue par l'utilisateur
+  "a categoriser": "@review", "a categoriser, divers": "@review",
+  // trop ambigu → on laisse les règles/libellé décider
+  "autres depenses": "@defer", "autres depenses, divers": "@defer", "vie quotidienne": "@defer",
+  "famille": "@defer", "enfants & scolarite": "@defer", "impots / taxes": "@defer",
+  "impot / taxes, divers": "@defer", "animaux": "@defer", "animaux, divers": "@defer",
+  "don / cadeaux": "@defer", "cadeaux": "@defer", "dons caritatifs": "@defer",
+  "cartes credit / credits conso": "@defer", "frais professionnels": "@defer",
+  "retrait d'argent": "@defer", "virements": "@defer", "virements recus": "@defer",
+};
+
+// Résout une catégorie banque vers une catégorie Ardoise existante.
+// Renvoie { categoryId } | { review: true } | null (= ambigu, déléguer aux règles).
+// Préfère un mapping concret (sous-catégorie ou catégorie) ; sinon "à catégoriser".
+const resolveBankCategory = (bankCat, bankSubCat, cats) => {
+  const tokens = [BANK_TO_CAT[normCat(bankSubCat)], BANK_TO_CAT[normCat(bankCat)]].filter(Boolean);
+  if (!tokens.length) return null;
+  const token = tokens.find((t) => t !== "@defer" && t !== "@review")
+    ?? tokens.find((t) => t === "@review") ?? "@defer";
+  if (token === "@defer") return null;
+  if (token === "@review") return { review: true };
+  if (token === "@frais") {
+    const found = cats.find((c) => /frais|bancaire|banque/i.test(c.label));
+    return found ? { categoryId: found.id } : { review: true };
+  }
+  return cats.some((c) => c.id === token) ? { categoryId: token } : null;
 };
 
 /* ---------------------------------------------------------------- palette couleurs */
@@ -281,24 +348,32 @@ export default function Ardoise() {
   };
 
   const updateCat = (id, categoryId) => {
-    // Marque la dépense comme catégorisée manuellement + apprend une règle automatiquement
-    setExpenses((x) => x.map((e) => {
-      if (e.id !== id) return e;
-      // Apprentissage auto : extrait un pattern du libellé et ajoute une règle utilisateur
-      const pattern = extractPattern(e.label);
-      if (pattern) {
-        setRules((prev) => {
-          const already = prev.findIndex((r) => r.pattern.toLowerCase() === pattern);
-          if (already >= 0) {
-            const updated = [...prev];
-            updated[already] = { ...updated[already], categoryId };
-            return updated;
-          }
-          return [...prev, { pattern, categoryId }];
-        });
+    const target = expenses.find((e) => e.id === id);
+    if (!target) return;
+    const oldCat = target.categoryId;
+    const pattern = extractPattern(target.label);
+
+    setRules((prev) => {
+      let next = prev;
+      // Correction active : si la dépense changeait de catégorie, retire les règles
+      // utilisateur qui matchent ce libellé ET pointaient vers l'ancienne catégorie
+      // (= la règle fautive qui avait causé le mauvais classement).
+      if (oldCat && oldCat !== categoryId) {
+        next = next.filter((r) => !(r.categoryId === oldCat && ruleMatchesLabel(target.label, r.pattern)));
       }
-      return { ...e, categoryId, manualCat: true, needsReview: false };
-    }));
+      // Apprentissage : ajoute / met à jour la règle vers la bonne catégorie.
+      if (pattern) {
+        const i = next.findIndex((r) => r.pattern.toLowerCase() === pattern);
+        if (i >= 0) {
+          next = next.map((r, idx) => (idx === i ? { ...r, categoryId } : r));
+        } else {
+          next = [...next, { pattern, categoryId }];
+        }
+      }
+      return next;
+    });
+
+    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId, manualCat: true, needsReview: false } : e)));
   };
 
   const updateExpense = (id, patch) =>
@@ -360,11 +435,19 @@ export default function Ardoise() {
       if (ext === "ofx" || ext === "qfx") parsed = await importBankOFX(file);
       else if (ext === "qif") parsed = await importBankQIF(file);
       else parsed = await importBankCSV(file);
-      // applique les règles utilisateur par-dessus l'auto-cat
-      parsed = parsed.map((e) => {
+      // Catégorisation à l'import. Priorité : catégorie banque (claire) >
+      // règles/libellé > à catégoriser. La catégorie banque est verrouillée
+      // (manualCat) pour rester stable ; l'utilisateur peut toujours la corriger.
+      parsed = parsed.map(({ bankCat, bankSubCat, ...e }) => {
+        const bank = resolveBankCategory(bankCat, bankSubCat, cats);
+        if (bank?.categoryId) {
+          return { ...e, categoryId: bank.categoryId, manualCat: true, needsReview: false };
+        }
         const categoryId = guessCatWithRules(e.label, rules) || e.categoryId;
-        const needsReview = categoryId === "autre" && !hasUserRuleMatch(e.label, rules);
-        return { ...e, categoryId, ...(needsReview ? { needsReview: true } : {}) };
+        if (categoryId !== "autre") return { ...e, categoryId };
+        // Ni catégorie banque exploitable, ni règle : à catégoriser.
+        const needsReview = bank?.review || !hasUserRuleMatch(e.label, rules);
+        return { ...e, categoryId: "autre", ...(needsReview ? { needsReview: true } : {}) };
       });
       if (!parsed.length) {
         alert("Aucune dépense détectée. Vérifie que le fichier contient une colonne date et une colonne montant ou débit.");
