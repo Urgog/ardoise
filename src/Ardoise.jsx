@@ -36,6 +36,7 @@ const DEFAULT_CATS = [
   { id: "abonnements", label: "Abonnements", color: "#2DD4BF", builtin: true },
   { id: "shopping", label: "Shopping", color: "#FB923C", builtin: true },
   { id: "autre", label: "Autre", color: "#94A3B8", builtin: true },
+  { id: "virements", label: "Virements", color: "#64748B", builtin: true, excludeFromTotal: true },
 ];
 
 const ICONS = {
@@ -106,7 +107,8 @@ export default function Ardoise() {
     () => expenses.filter((e) => monthOf(e.date) === month),
     [expenses, month]
   );
-  const monthTotal = useMemo(() => monthExp.reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp]);
+  const isTransfer = (e) => catById[e.categoryId]?.excludeFromTotal;
+  const monthTotal = useMemo(() => monthExp.filter((e) => !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
 
   const prevMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -114,14 +116,14 @@ export default function Ardoise() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, [month]);
   const prevTotal = useMemo(
-    () => expenses.filter((e) => monthOf(e.date) === prevMonth).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    () => expenses.filter((e) => monthOf(e.date) === prevMonth && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
     [expenses, prevMonth]
   );
   const delta = prevTotal ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
 
   const byCat = useMemo(() => {
     const m = {};
-    monthExp.filter((e) => !e.isCredit).forEach((e) => (m[e.categoryId] = (m[e.categoryId] || 0) + e.amount));
+    monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).forEach((e) => (m[e.categoryId] = (m[e.categoryId] || 0) + e.amount));
     return Object.entries(m)
       .map(([id, value]) => ({ id, value, ...(catById[id] || { label: id, color: "#94A3B8" }) }))
       .sort((a, b) => b.value - a.value);
@@ -135,7 +137,7 @@ export default function Ardoise() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const total = expenses.filter((e) => monthOf(e.date) === ym).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
+      const total = expenses.filter((e) => monthOf(e.date) === ym && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
       out.push({ ym, total, lbl: d.toLocaleDateString("fr-FR", { month: "short" }), cur: ym === month });
     }
     return out;
@@ -538,7 +540,10 @@ export default function Ardoise() {
                           )}
                         </p>
                       </div>
-                      <span className={`font-mono text-sm tabular-nums ${e.isCredit ? "text-emerald-400" : "text-rose-400"}`}>
+                      {catById[e.categoryId]?.excludeFromTotal && (
+                        <span className="rounded px-1.5 py-0.5 text-xs text-slate-500 border border-slate-700">non compté</span>
+                      )}
+                      <span className={`font-mono text-sm tabular-nums ${catById[e.categoryId]?.excludeFromTotal ? "text-slate-500" : e.isCredit ? "text-emerald-400" : "text-rose-400"}`}>
                         {e.isCredit ? "+" : "−"}{fmtEUR.format(e.amount)}
                       </span>
                       <button onClick={() => setEditExpense(e)}
@@ -858,7 +863,7 @@ function YearView({ expenses, year, catById }) {
     ...m,
     label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
     ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
-    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`)).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
   }));
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
   const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
