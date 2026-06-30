@@ -26,18 +26,64 @@ const monthLabel = (ym) => {
 };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+/* ---------------------------------------------------------------- palette couleurs */
+
+// Palette de 16 teintes bien réparties sur la roue chromatique
+const PALETTE = [
+  "#F87171", // rouge
+  "#FB923C", // orange
+  "#FBBF24", // ambre
+  "#FDE047", // jaune
+  "#4ADE80", // vert clair
+  "#34D399", // émeraude
+  "#2DD4BF", // teal
+  "#38BDF8", // ciel
+  "#60A5FA", // bleu
+  "#818CF8", // indigo
+  "#A78BFA", // violet
+  "#C084FC", // violet clair
+  "#E879F9", // fuchsia
+  "#F472B6", // rose
+  "#94A3B8", // ardoise (neutre)
+  "#64748B", // ardoise foncé
+];
+
+const hexToHue = (hex) => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  if (d === 0) return 0;
+  let h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) / 6
+        : max === g ? ((b - r) / d + 2) / 6
+        : ((r - g) / d + 4) / 6;
+  return h * 360;
+};
+
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+
+// Retourne la couleur de la palette la plus éloignée des couleurs existantes
+const pickColor = (existingColors = []) => {
+  const hues = existingColors.map(hexToHue);
+  return PALETTE.reduce((best, c) => {
+    const h = hexToHue(c);
+    const minDist = hues.length ? Math.min(...hues.map((eh) => hueDist(h, eh))) : 360;
+    return minDist > best.dist ? { color: c, dist: minDist } : best;
+  }, { color: PALETTE[0], dist: -1 }).color;
+};
+
 const DEFAULT_CATS = [
   { id: "alimentation", label: "Alimentation", color: "#34D399", builtin: true },
-  { id: "logement", label: "Logement", color: "#60A5FA", builtin: true },
-  { id: "transport", label: "Transport", color: "#FBBF24", builtin: true },
-  { id: "restaurants", label: "Restaurants", color: "#F472B6", builtin: true },
-  { id: "loisirs", label: "Loisirs", color: "#A78BFA", builtin: true },
-  { id: "sante", label: "Santé", color: "#F87171", builtin: true },
-  { id: "abonnements", label: "Abonnements", color: "#2DD4BF", builtin: true },
-  { id: "shopping", label: "Shopping", color: "#FB923C", builtin: true },
-  { id: "autre", label: "Autre", color: "#94A3B8", builtin: true },
-  { id: "revenus", label: "Revenus", color: "#34D399", builtin: true },
-  { id: "inter-comptes", label: "Inter-comptes", color: "#64748B", builtin: true, excludeFromTotal: true },
+  { id: "logement",     label: "Logement",      color: "#60A5FA", builtin: true },
+  { id: "transport",    label: "Transport",      color: "#FBBF24", builtin: true },
+  { id: "restaurants",  label: "Restaurants",    color: "#F472B6", builtin: true },
+  { id: "loisirs",      label: "Loisirs",        color: "#A78BFA", builtin: true },
+  { id: "sante",        label: "Santé",           color: "#F87171", builtin: true },
+  { id: "abonnements",  label: "Abonnements",    color: "#2DD4BF", builtin: true },
+  { id: "shopping",     label: "Shopping",        color: "#FB923C", builtin: true },
+  { id: "autre",        label: "Autre",           color: "#94A3B8", builtin: true },
+  { id: "revenus",      label: "Revenus",         color: "#4ADE80", builtin: true },
+  { id: "inter-comptes", label: "Inter-comptes", color: "#818CF8", builtin: true, excludeFromTotal: true },
 ];
 
 const ICONS = {
@@ -89,7 +135,10 @@ export default function Ardoise() {
           const saved = d.categories;
           const savedIds = new Set(saved.map((c) => c.id));
           const missingBuiltins = DEFAULT_CATS.filter((c) => c.builtin && !savedIds.has(c.id));
-          setCats([...saved, ...missingBuiltins]);
+          // Sync couleurs des built-ins depuis DEFAULT_CATS (corrige doublons/palettes obsolètes)
+          const defaultColorById = Object.fromEntries(DEFAULT_CATS.map((c) => [c.id, c.color]));
+          const synced = saved.map((c) => c.builtin && defaultColorById[c.id] ? { ...c, color: defaultColorById[c.id] } : c);
+          setCats([...synced, ...missingBuiltins]);
         }
         if (d.expenses) setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
@@ -250,7 +299,10 @@ export default function Ardoise() {
 
   const addCat = (lbl, color) => {
     const id = uid();
-    setCats((c) => [...c.slice(0, c.length - 1), { id, label: lbl, color, builtin: false }, c[c.length - 1]]);
+    setCats((c) => {
+      const autoColor = color || pickColor(c.map((x) => x.color));
+      return [...c.slice(0, c.length - 1), { id, label: lbl, color: autoColor, builtin: false }, c[c.length - 1]];
+    });
     return id;
   };
   const removeCat = (id) => {
@@ -943,7 +995,7 @@ function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChan
   const [tab, setTab] = useState("categories");
   // catégories
   const [lbl, setLbl] = useState("");
-  const [color, setColor] = useState("#22D3EE");
+  const [color, setColor] = useState(() => pickColor(cats.map((c) => c.color)));
   const [editCat, setEditCat] = useState(null); // {id, label, color}
   // règles
   const [pattern, setPattern] = useState("");
@@ -1029,9 +1081,9 @@ function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChan
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
                 className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-slate-700 bg-transparent" />
               <input value={lbl} onChange={(e) => setLbl(e.target.value)} placeholder="Nouvelle catégorie"
-                onKeyDown={(e) => { if (e.key === "Enter" && lbl.trim()) { onAddCat(lbl.trim(), color); setLbl(""); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && lbl.trim()) { onAddCat(lbl.trim(), color); setLbl(""); setColor(pickColor([...cats.map((c) => c.color), color])); } }}
                 className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
-              <button disabled={!lbl.trim()} onClick={() => { onAddCat(lbl.trim(), color); setLbl(""); }}
+              <button disabled={!lbl.trim()} onClick={() => { onAddCat(lbl.trim(), color); setLbl(""); setColor(pickColor([...cats.map((c) => c.color), color])); }}
                 className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-40">
                 <Plus size={16} />
               </button>
