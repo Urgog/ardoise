@@ -307,10 +307,10 @@ export default function Ardoise() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setShowForecast(false); setShowYear((v) => !v); }}
+              onClick={() => { if (showForecast) { setShowForecast(false); } else { setShowYear((v) => !v); } }}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear && !showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
             >
-              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : "Vue année"}
+              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : showForecast ? "Vue mois" : "Vue année"}
             </button>
             <button
               onClick={() => { setShowForecast((v) => !v); setShowYear(false); }}
@@ -622,24 +622,26 @@ export default function Ardoise() {
 
 /* ---------------------------------------------------------------- NumInput — input numérique sans spinner, stable pendant la saisie décimale */
 
-function NumInput({ value, onCommit, className, ...rest }) {
-  const [local, setLocal] = useState(String(value ?? ""));
+function NumInput({ value, onCommit, className, min, max, step }) {
+  const fmt = (v) => String(v ?? "").replace(".", ",");
+  const parse = (s) => parseFloat(String(s).replace(",", ".")) || 0;
+
+  const [local, setLocal] = useState(fmt(value));
   const focused = React.useRef(false);
 
-  // Sync depuis l'extérieur seulement si l'input n'est pas en focus
   React.useEffect(() => {
-    if (!focused.current) setLocal(String(value ?? ""));
+    if (!focused.current) setLocal(fmt(value));
   }, [value]);
 
   return (
     <input
-      {...rest}
-      type="number"
+      type="text"
+      inputMode="decimal"
       className={className}
       value={local}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => setLocal(e.target.value.replace(".", ","))}
       onFocus={(e) => { focused.current = true; e.target.select(); }}
-      onBlur={() => { focused.current = false; onCommit(local); setLocal(String(parseFloat(local) || 0)); }}
+      onBlur={() => { focused.current = false; onCommit(String(parse(local))); setLocal(fmt(parse(local))); }}
       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
     />
   );
