@@ -10,7 +10,7 @@ import {
   Settings, RotateCcw, ClipboardList, UserPlus, Users, Sun, Moon,
 } from "lucide-react";
 import { storage } from "./lib/storage";
-import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch } from "./lib/importBank";
+import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch, ruleMatchesLabel } from "./lib/importBank";
 
 /* ---------------------------------------------------------------- utilitaires */
 
@@ -281,24 +281,32 @@ export default function Ardoise() {
   };
 
   const updateCat = (id, categoryId) => {
-    // Marque la dépense comme catégorisée manuellement + apprend une règle automatiquement
-    setExpenses((x) => x.map((e) => {
-      if (e.id !== id) return e;
-      // Apprentissage auto : extrait un pattern du libellé et ajoute une règle utilisateur
-      const pattern = extractPattern(e.label);
-      if (pattern) {
-        setRules((prev) => {
-          const already = prev.findIndex((r) => r.pattern.toLowerCase() === pattern);
-          if (already >= 0) {
-            const updated = [...prev];
-            updated[already] = { ...updated[already], categoryId };
-            return updated;
-          }
-          return [...prev, { pattern, categoryId }];
-        });
+    const target = expenses.find((e) => e.id === id);
+    if (!target) return;
+    const oldCat = target.categoryId;
+    const pattern = extractPattern(target.label);
+
+    setRules((prev) => {
+      let next = prev;
+      // Correction active : si la dépense changeait de catégorie, retire les règles
+      // utilisateur qui matchent ce libellé ET pointaient vers l'ancienne catégorie
+      // (= la règle fautive qui avait causé le mauvais classement).
+      if (oldCat && oldCat !== categoryId) {
+        next = next.filter((r) => !(r.categoryId === oldCat && ruleMatchesLabel(target.label, r.pattern)));
       }
-      return { ...e, categoryId, manualCat: true, needsReview: false };
-    }));
+      // Apprentissage : ajoute / met à jour la règle vers la bonne catégorie.
+      if (pattern) {
+        const i = next.findIndex((r) => r.pattern.toLowerCase() === pattern);
+        if (i >= 0) {
+          next = next.map((r, idx) => (idx === i ? { ...r, categoryId } : r));
+        } else {
+          next = [...next, { pattern, categoryId }];
+        }
+      }
+      return next;
+    });
+
+    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId, manualCat: true, needsReview: false } : e)));
   };
 
   const updateExpense = (id, patch) =>

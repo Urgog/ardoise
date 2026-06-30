@@ -85,6 +85,13 @@ export function hasUserRuleMatch(label, userRules = []) {
   });
 }
 
+// Retourne true si un pattern de règle (seul) matche le libellé.
+export function ruleMatchesLabel(label, pattern) {
+  if (!pattern) return false;
+  const words = patternWords(pattern);
+  return words.length > 0 && countWordMatches(normMatch(label), words) > 0;
+}
+
 /* ------------------------------------------------ helpers de parsing */
 
 const toNumber = (raw) => {
