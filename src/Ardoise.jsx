@@ -622,47 +622,61 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
   const [editingPerson, setEditingPerson] = useState(null);
   const [editingPersonName, setEditingPersonName] = useState("");
 
-  const totalItem = (item) => people.reduce((s, p) => s + (parseFloat(item.shares?.[p.id]) || 0), 0);
-  const totalPerson = (pid) => items.reduce((s, it) => s + (parseFloat(it.shares?.[pid]) || 0), 0);
-  const grandTotal = items.reduce((s, it) => s + totalItem(it), 0);
+  const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+
+  // montant d'une personne sur un item = total * (pct / 100)
+  const personAmount = (item, pid) => {
+    const total = parseFloat(item.total) || 0;
+    const pct = parseFloat(item.pcts?.[pid]) || 0;
+    return total * pct / 100;
+  };
+  const totalPerson = (pid) => items.reduce((s, it) => s + personAmount(it, pid), 0);
+  const grandTotal = items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
 
   const addItem = () => {
     if (!newLabel.trim()) return;
-    const shares = {};
-    people.forEach((p) => (shares[p.id] = 0));
-    onChangeItems([...items, { id: Date.now().toString(36), label: newLabel.trim(), shares }]);
+    const pcts = {};
+    // répartition équitable par défaut
+    const share = people.length ? Math.round(100 / people.length) : 0;
+    people.forEach((p, i) => (pcts[p.id] = i === people.length - 1 ? 100 - share * (people.length - 1) : share));
+    onChangeItems([...items, { id: Date.now().toString(36), label: newLabel.trim(), total: 0, pcts }]);
     setNewLabel("");
   };
 
-  const updateShare = (itemId, pid, val) => {
+  const updateTotal = (itemId, val) =>
+    onChangeItems(items.map((it) => it.id === itemId ? { ...it, total: val === "" ? "" : parseFloat(val) || 0 } : it));
+
+  const updatePct = (itemId, pid, val) =>
     onChangeItems(items.map((it) =>
-      it.id === itemId ? { ...it, shares: { ...it.shares, [pid]: val === "" ? "" : parseFloat(val) || 0 } } : it
+      it.id === itemId ? { ...it, pcts: { ...it.pcts, [pid]: val === "" ? "" : parseFloat(val) || 0 } } : it
     ));
+
+  // Saisie directe du montant → recalcule le %
+  const updateAmount = (itemId, pid, val) => {
+    const amount = val === "" ? 0 : parseFloat(val) || 0;
+    onChangeItems(items.map((it) => {
+      if (it.id !== itemId) return it;
+      const total = parseFloat(it.total) || 0;
+      const pct = total > 0 ? Math.round((amount / total) * 10000) / 100 : 0;
+      return { ...it, pcts: { ...it.pcts, [pid]: pct } };
+    }));
   };
 
   const removeItem = (id) => onChangeItems(items.filter((it) => it.id !== id));
 
   const addPerson = () => {
     const id = "p" + Date.now().toString(36);
-    const newPeople = [...people, { id, name: "Nouveau" }];
-    onChangePeople(newPeople);
-    onChangeItems(items.map((it) => ({ ...it, shares: { ...it.shares, [id]: 0 } })));
+    onChangePeople([...people, { id, name: "Nouveau" }]);
+    onChangeItems(items.map((it) => ({ ...it, pcts: { ...it.pcts, [id]: 0 } })));
   };
 
   const removePerson = (pid) => {
     onChangePeople(people.filter((p) => p.id !== pid));
-    onChangeItems(items.map((it) => {
-      const s = { ...it.shares };
-      delete s[pid];
-      return { ...it, shares: s };
-    }));
+    onChangeItems(items.map((it) => { const p = { ...it.pcts }; delete p[pid]; return { ...it, pcts: p }; }));
   };
 
-  const renamePerson = (pid, name) => {
+  const renamePerson = (pid, name) =>
     onChangePeople(people.map((p) => p.id === pid ? { ...p, name } : p));
-  };
-
-  const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 
   return (
     <div className="space-y-6">
@@ -687,10 +701,10 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
           <thead>
             <tr className="border-b border-slate-800">
               <th className="py-3 pl-4 pr-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Dépense</th>
-              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Total</th>
+              <th className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Prix total</th>
               {people.map((p) => (
-                <th key={p.id} className="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-400">
-                  <div className="flex items-center justify-end gap-1.5">
+                <th key={p.id} className="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider text-slate-400">
+                  <div className="flex items-center justify-center gap-1.5">
                     {editingPerson === p.id ? (
                       <input autoFocus value={editingPersonName}
                         onChange={(e) => setEditingPersonName(e.target.value)}
@@ -719,19 +733,34 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
             {items.map((item) => (
               <tr key={item.id} className="group hover:bg-slate-800/30">
                 <td className="py-2 pl-4 pr-2 font-medium text-slate-200">{item.label}</td>
-                <td className="px-3 py-2 text-right font-mono text-slate-300 tabular-nums">
-                  {fmtEUR.format(totalItem(item))}
+                {/* Prix total */}
+                <td className="px-3 py-2">
+                  <div className="flex items-center justify-end gap-1">
+                    <input type="number" min="0" step="0.01"
+                      value={item.total ?? 0}
+                      onChange={(e) => updateTotal(item.id, e.target.value)}
+                      className="w-24 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500" />
+                    <span className="text-xs text-slate-600">€</span>
+                  </div>
                 </td>
+                {/* % et montant par personne — les deux sont éditables et se synchronisent */}
                 {people.map((p) => (
-                  <td key={p.id} className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1">
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={item.shares?.[p.id] ?? 0}
-                        onChange={(e) => updateShare(item.id, p.id, e.target.value)}
-                        className="w-24 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500"
-                      />
-                      <span className="text-xs text-slate-600">€</span>
+                  <td key={p.id} className="px-2 py-1.5">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" max="100" step="0.01"
+                          value={item.pcts?.[p.id] ?? 0}
+                          onChange={(e) => updatePct(item.id, p.id, e.target.value)}
+                          className="w-16 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500" />
+                        <span className="text-xs text-slate-600">%</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" step="0.01"
+                          value={Math.round(personAmount(item, p.id) * 100) / 100}
+                          onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
+                          className="w-16 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-right font-mono text-xs text-emerald-400 outline-none focus:border-emerald-500" />
+                        <span className="text-xs text-slate-600">€</span>
+                      </div>
                     </div>
                   </td>
                 ))}
@@ -748,8 +777,8 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
               <td className="py-3 pl-4 pr-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Total</td>
               <td className="px-3 py-3 text-right font-mono font-semibold text-slate-200 tabular-nums">{fmtEUR.format(grandTotal)}</td>
               {people.map((p) => (
-                <td key={p.id} className="px-3 py-3 text-right font-mono font-semibold text-emerald-400 tabular-nums">
-                  {fmtEUR.format(totalPerson(p.id))}
+                <td key={p.id} className="px-3 py-3 text-center">
+                  <span className="font-mono font-semibold text-emerald-400 tabular-nums">{fmtEUR.format(totalPerson(p.id))}</span>
                 </td>
               ))}
               <td />
