@@ -104,7 +104,7 @@ export default function Ardoise() {
   useEffect(() => {
     if (!loaded) return;
     storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
-  }, [expenses, cats, budgets, rules, loaded]);
+  }, [expenses, cats, budgets, rules, forecastPeople, forecastItems, loaded]);
 
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
@@ -620,6 +620,31 @@ export default function Ardoise() {
   );
 }
 
+/* ---------------------------------------------------------------- NumInput — input numérique sans spinner, stable pendant la saisie décimale */
+
+function NumInput({ value, onCommit, className, ...rest }) {
+  const [local, setLocal] = useState(String(value ?? ""));
+  const focused = React.useRef(false);
+
+  // Sync depuis l'extérieur seulement si l'input n'est pas en focus
+  React.useEffect(() => {
+    if (!focused.current) setLocal(String(value ?? ""));
+  }, [value]);
+
+  return (
+    <input
+      {...rest}
+      type="number"
+      className={className}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onFocus={(e) => { focused.current = true; e.target.select(); }}
+      onBlur={() => { focused.current = false; onCommit(local); setLocal(String(parseFloat(local) || 0)); }}
+      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+    />
+  );
+}
+
 /* ---------------------------------------------------------------- ForecastView */
 
 function ForecastView({ people, items, onChangePeople, onChangeItems }) {
@@ -657,19 +682,19 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
     onChangeItems(items.map((it) => {
       if (it.id !== itemId) return it;
       const amount = val === "" ? 0 : parseFloat(val) || 0;
-      // Garde les montants des autres personnes, met à jour uniquement celle saisie,
-      // recalcule le total et les % en conséquence.
-      const newAmounts = {};
-      people.forEach((p) => { newAmounts[p.id] = p.id === pid ? amount : personAmount(it, p.id); });
-      const newTotal = Math.round(people.reduce((s, p) => s + newAmounts[p.id], 0) * 100) / 100;
-      const newPcts = {};
-      if (newTotal > 0) {
-        people.forEach((p) => { newPcts[p.id] = Math.round((newAmounts[p.id] / newTotal) * 10000) / 100; });
-      } else {
-        const eq = Math.round(10000 / people.length) / 100;
-        people.forEach((p) => { newPcts[p.id] = eq; });
+      const total = parseFloat(it.total) || 0;
+      if (total > 0) {
+        // Total fixe : on dérive le % depuis le montant saisi, le total ne bouge pas
+        const pct = Math.min(100, Math.max(0, Math.round((amount / total) * 10000) / 100));
+        return applyPct(it, pid, pct);
       }
-      return { ...it, total: newTotal, pcts: newPcts };
+      // Total non défini : on le calcule depuis le montant et le % existant
+      const existingPct = parseFloat(it.pcts?.[pid]) || 0;
+      if (existingPct > 0) {
+        const newTotal = Math.round((amount / (existingPct / 100)) * 100) / 100;
+        return { ...it, total: newTotal };
+      }
+      return applyPct({ ...it, total: amount }, pid, 100);
     }));
 
   const addItem = () => {
@@ -762,10 +787,9 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                 <td className="py-2 pl-4 pr-3 font-medium text-slate-200 border-r border-slate-800">{item.label}</td>
                 <td className="px-3 py-2 border-r border-slate-800">
                   <div className="flex items-center justify-end gap-1">
-                    <input type="number" min="0" step="0.01"
+                    <NumInput min="0" step="0.01"
                       value={item.total ?? 0}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => updateTotal(item.id, e.target.value)}
+                      onCommit={(v) => updateTotal(item.id, v)}
                       className={inputCls("border-slate-700 text-slate-200")} />
                     <span className="text-xs text-slate-600">€</span>
                   </div>
@@ -774,20 +798,18 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                   <React.Fragment key={p.id}>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" max="100" step="0.01"
+                        <NumInput min="0" max="100" step="0.01"
                           value={Math.round((parseFloat(item.pcts?.[p.id]) || 0) * 100) / 100}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updatePct(item.id, p.id, e.target.value)}
+                          onCommit={(v) => updatePct(item.id, p.id, v)}
                           className={inputCls("border-slate-700 text-slate-300")} />
                         <span className="text-xs text-slate-600">%</span>
                       </div>
                     </td>
                     <td className={`px-2 py-2 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" step="0.01"
+                        <NumInput min="0" step="0.01"
                           value={Math.round(personAmount(item, p.id) * 100) / 100}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
+                          onCommit={(v) => updateAmount(item.id, p.id, v)}
                           className={inputCls("border-slate-700 text-emerald-400")} />
                         <span className="text-xs text-slate-600">€</span>
                       </div>
