@@ -32,12 +32,30 @@ export function guessCat(label) {
   return "autre";
 }
 
-// Applique d'abord les règles utilisateur (simples sous-chaînes), puis les règles par défaut.
+// Applique d'abord les règles utilisateur, puis les règles par défaut.
+// Matching par mots individuels : une règle matche si AU MOINS UN de ses mots est présent.
+// En cas de plusieurs règles qui matchent, on prend celle avec le plus de mots trouvés (plus spécifique).
 export function guessCatWithRules(label, userRules = []) {
   const l = (label || "").toLowerCase();
+
+  let bestCat = null;
+  let bestScore = 0;
+  let bestWordCount = 0;
+
   for (const { pattern, categoryId } of userRules) {
-    if (pattern && l.includes(pattern.toLowerCase())) return categoryId;
+    if (!pattern) continue;
+    const words = pattern.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+    const matches = words.filter((w) => l.includes(w)).length;
+    if (matches === 0) continue;
+    // Priorité : plus de mots matchés > plus de mots dans le pattern (plus spécifique)
+    if (matches > bestScore || (matches === bestScore && words.length > bestWordCount)) {
+      bestScore = matches;
+      bestWordCount = words.length;
+      bestCat = categoryId;
+    }
   }
+
+  if (bestCat) return bestCat;
   return guessCat(label);
 }
 
