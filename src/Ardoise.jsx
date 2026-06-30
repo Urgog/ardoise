@@ -299,6 +299,8 @@ export default function Ardoise() {
   );
   const isTransfer = (e) => catById[e.categoryId]?.excludeFromTotal;
   const monthTotal = useMemo(() => monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
+  // Argent gagné dans le mois : crédits hors transferts inter-comptes.
+  const monthIncome = useMemo(() => monthExp.filter((e) => e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
 
   const prevMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -658,6 +660,8 @@ export default function Ardoise() {
         </section>
 
         <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label="Dépensé ce mois" value={fmtEUR.format(monthTotal)} mono color="#F87171" />
+          <Stat label="Gagné ce mois" value={fmtEUR.format(monthIncome)} mono color="#34D399" />
           <Stat label="Moyenne / jour" value={fmtEUR.format(monthTotal / daysElapsed)} />
           <Stat label="Nombre d'achats" value={monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).length} mono />
           <Stat
