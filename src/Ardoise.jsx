@@ -290,6 +290,9 @@ export default function Ardoise() {
         select option { background:#0f172a; }
         ::-webkit-scrollbar{height:8px;width:8px}
         ::-webkit-scrollbar-thumb{background:#334155;border-radius:8px}
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+        input[type=number]{-moz-appearance:textfield}
       `}</style>
 
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
@@ -625,8 +628,6 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
   const [editingPersonName, setEditingPersonName] = useState("");
 
   const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
-  const noSpin = { style: { MozAppearance: "textfield" } };
-  const noSpinCls = "[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
   const personAmount = (item, pid) => (parseFloat(item.total) || 0) * (parseFloat(item.pcts?.[pid]) || 0) / 100;
   const totalPerson = (pid) => items.reduce((s, it) => s + personAmount(it, pid), 0);
@@ -699,7 +700,7 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
     onChangePeople(people.map((p) => p.id === pid ? { ...p, name } : p));
 
   const inputCls = (color) =>
-    `w-20 rounded border bg-slate-950 px-2 py-1 text-right font-mono text-xs outline-none focus:border-emerald-500 ${noSpinCls} ${color}`;
+    `w-20 rounded border bg-slate-950 px-2 py-1 text-right font-mono text-xs outline-none focus:border-emerald-500 ${color}`;
 
   return (
     <div className="space-y-6">
@@ -763,8 +764,9 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                 <td className="py-2 pl-4 pr-3 font-medium text-slate-200 border-r border-slate-800">{item.label}</td>
                 <td className="px-3 py-2 border-r border-slate-800">
                   <div className="flex items-center justify-end gap-1">
-                    <input type="number" min="0" step="0.01" {...noSpin}
+                    <input type="number" min="0" step="0.01"
                       value={item.total ?? 0}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => updateTotal(item.id, e.target.value)}
                       className={inputCls("border-slate-700 text-slate-200")} />
                     <span className="text-xs text-slate-600">€</span>
@@ -774,8 +776,9 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                   <React.Fragment key={p.id}>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" max="100" step="0.01" {...noSpin}
+                        <input type="number" min="0" max="100" step="0.01"
                           value={Math.round((parseFloat(item.pcts?.[p.id]) || 0) * 100) / 100}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePct(item.id, p.id, e.target.value)}
                           className={inputCls("border-slate-700 text-slate-300")} />
                         <span className="text-xs text-slate-600">%</span>
@@ -783,8 +786,9 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                     </td>
                     <td className={`px-2 py-2 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" step="0.01" {...noSpin}
+                        <input type="number" min="0" step="0.01"
                           value={Math.round(personAmount(item, p.id) * 100) / 100}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
                           className={inputCls("border-slate-700 text-emerald-400")} />
                         <span className="text-xs text-slate-600">€</span>
