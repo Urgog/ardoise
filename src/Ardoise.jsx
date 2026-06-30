@@ -344,7 +344,7 @@ export default function Ardoise() {
           />
         )}
 
-        {!showForecast && <section className="mb-6 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-900/40 p-6">
+        {!showForecast && <><section className="mb-6 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-900/40 p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-widest text-slate-500">Dépensé ce mois</p>
@@ -589,7 +589,7 @@ export default function Ardoise() {
 
         <p className="mt-6 text-center text-xs text-slate-600">
           Données stockées localement dans ton navigateur · {expenses.length} dépense(s) au total
-        </p>}
+        </p></>}
 
       </div>
 
