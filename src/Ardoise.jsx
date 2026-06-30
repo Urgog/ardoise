@@ -51,7 +51,7 @@ const extractPattern = (label) => {
   s = s.replace(/\s+/g, " ").trim();
 
   const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w));
-  const pattern = words.slice(0, 2).join(" ").trim();
+  const pattern = words.slice(0, 3).join(" ").trim();
   return pattern.length >= 3 ? pattern : null;
 };
 const DEFAULT_CATS = [
