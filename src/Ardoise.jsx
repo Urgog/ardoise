@@ -572,7 +572,13 @@ export default function Ardoise() {
         <SettingsPanel
           cats={cats} byCat={byCat} budgets={budgets} rules={rules}
           onBudget={setCatBudget} onAddCat={addCat} onRemoveCat={removeCat}
-          onChangeRules={setRules} onExportJSON={exportJSON}
+          onChangeRules={(newRules) => {
+            setRules(newRules);
+            setExpenses((x) => x.map((e) => {
+              const guessed = guessCatWithRules(e.label, newRules);
+              return guessed ? { ...e, categoryId: guessed } : e;
+            }));
+          }} onExportJSON={exportJSON}
           onImportJSON={() => jsonRef.current?.click()}
           onReset={resetData} onClose={() => setShowSettings(false)}
         />
