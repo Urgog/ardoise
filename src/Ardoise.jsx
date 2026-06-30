@@ -620,6 +620,31 @@ export default function Ardoise() {
   );
 }
 
+/* ---------------------------------------------------------------- NumInput — input numérique sans spinner, stable pendant la saisie décimale */
+
+function NumInput({ value, onCommit, className, ...rest }) {
+  const [local, setLocal] = useState(String(value ?? ""));
+  const focused = React.useRef(false);
+
+  // Sync depuis l'extérieur seulement si l'input n'est pas en focus
+  React.useEffect(() => {
+    if (!focused.current) setLocal(String(value ?? ""));
+  }, [value]);
+
+  return (
+    <input
+      {...rest}
+      type="number"
+      className={className}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onFocus={(e) => { focused.current = true; e.target.select(); }}
+      onBlur={() => { focused.current = false; onCommit(local); setLocal(String(parseFloat(local) || 0)); }}
+      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+    />
+  );
+}
+
 /* ---------------------------------------------------------------- ForecastView */
 
 function ForecastView({ people, items, onChangePeople, onChangeItems }) {
@@ -762,10 +787,9 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                 <td className="py-2 pl-4 pr-3 font-medium text-slate-200 border-r border-slate-800">{item.label}</td>
                 <td className="px-3 py-2 border-r border-slate-800">
                   <div className="flex items-center justify-end gap-1">
-                    <input type="number" min="0" step="0.01"
+                    <NumInput min="0" step="0.01"
                       value={item.total ?? 0}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => updateTotal(item.id, e.target.value)}
+                      onCommit={(v) => updateTotal(item.id, v)}
                       className={inputCls("border-slate-700 text-slate-200")} />
                     <span className="text-xs text-slate-600">€</span>
                   </div>
@@ -774,20 +798,18 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                   <React.Fragment key={p.id}>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" max="100" step="0.01"
+                        <NumInput min="0" max="100" step="0.01"
                           value={Math.round((parseFloat(item.pcts?.[p.id]) || 0) * 100) / 100}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updatePct(item.id, p.id, e.target.value)}
+                          onCommit={(v) => updatePct(item.id, p.id, v)}
                           className={inputCls("border-slate-700 text-slate-300")} />
                         <span className="text-xs text-slate-600">%</span>
                       </div>
                     </td>
                     <td className={`px-2 py-2 ${i < people.length - 1 ? "border-r border-slate-800" : ""}`}>
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" step="0.01"
+                        <NumInput min="0" step="0.01"
                           value={Math.round(personAmount(item, p.id) * 100) / 100}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
+                          onCommit={(v) => updateAmount(item.id, p.id, v)}
                           className={inputCls("border-slate-700 text-emerald-400")} />
                         <span className="text-xs text-slate-600">€</span>
                       </div>
