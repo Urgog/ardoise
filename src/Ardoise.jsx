@@ -26,6 +26,34 @@ const monthLabel = (ym) => {
 };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+/* ---------------------------------------------------------------- extraction pattern bancaire */
+
+const extractPattern = (label) => {
+  let s = label.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/\./g, " ")
+    .trim();
+
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(
+      /^(virements?|vir|sepa|cb|carte(\s+bleue)?|prlv|prelevements?|prel|paiements?|achat|retrait|ret|dab|gab|frais|avoir|remise|cheques?|cotisations?|commissions?|interets?|de|du|mr|mme|par|pour|chez|au|aux)\s+/i,
+      ""
+    ).trim();
+  } while (s !== prev);
+
+  s = s.replace(/\b\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?\b/g, "");
+  s = s.replace(/\b\d{4,}\b/g, "");
+  s = s.replace(/\b(?:[a-z]+\d+|\d+[a-z]+)\b/g, "");
+  s = s.replace(/\b\w{1,2}\b/g, "");
+  s = s.replace(/\b(sarl|sas|eurl|spa|inc|ltd|groupe|group|agence|magasin|boutique|store|market|france|paris|lyon|marseille|bordeaux|lille|nantes|strasbourg|metz|toulouse)\b/g, "");
+  s = s.replace(/\s+/g, " ").trim();
+
+  const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w));
+  const pattern = words.slice(0, 2).join(" ").trim();
+  return pattern.length >= 3 ? pattern : null;
+};
 const DEFAULT_CATS = [
   { id: "alimentation", label: "Alimentation", color: "#34D399", builtin: true },
   { id: "logement", label: "Logement", color: "#60A5FA", builtin: true },
@@ -195,11 +223,8 @@ export default function Ardoise() {
     setExpenses((x) => x.map((e) => {
       if (e.id !== id) return e;
       // Apprentissage auto : extrait un pattern du libellé et ajoute une règle utilisateur
-      const pattern = e.label.trim().toLowerCase()
-        .replace(/^(vir(ement)?(\s+sepa)?|cb|prlv|prelevement|paiement|achat|retrait)\s+/i, "")
-        .split(/\s+/).slice(0, 3).join(" ")
-        .trim();
-      if (pattern.length >= 3) {
+      const pattern = extractPattern(e.label);
+      if (pattern) {
         setRules((prev) => {
           const already = prev.findIndex((r) => r.pattern.toLowerCase() === pattern);
           if (already >= 0) {
