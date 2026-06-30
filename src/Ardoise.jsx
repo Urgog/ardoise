@@ -114,7 +114,7 @@ export default function Ardoise() {
     [expenses, month]
   );
   const isTransfer = (e) => catById[e.categoryId]?.excludeFromTotal;
-  const monthTotal = useMemo(() => monthExp.filter((e) => !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
+  const monthTotal = useMemo(() => monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
 
   const prevMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -122,7 +122,7 @@ export default function Ardoise() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, [month]);
   const prevTotal = useMemo(
-    () => expenses.filter((e) => monthOf(e.date) === prevMonth && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    () => expenses.filter((e) => monthOf(e.date) === prevMonth && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0),
     [expenses, prevMonth]
   );
   const delta = prevTotal ? ((monthTotal - prevTotal) / prevTotal) * 100 : null;
@@ -143,7 +143,7 @@ export default function Ardoise() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const total = expenses.filter((e) => monthOf(e.date) === ym && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
+      const total = expenses.filter((e) => monthOf(e.date) === ym && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0);
       out.push({ ym, total, lbl: d.toLocaleDateString("fr-FR", { month: "short" }), cur: ym === month });
     }
     return out;
@@ -869,7 +869,7 @@ function YearView({ expenses, year, catById }) {
     ...m,
     label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
     ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
-    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0),
+    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0),
   }));
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
   const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
