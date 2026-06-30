@@ -399,7 +399,22 @@ export default function Ardoise() {
       return next;
     });
 
-    setExpenses((x) => x.map((e) => (e.id === id ? { ...e, categoryId, manualCat: true, needsReview: false } : e)));
+    setExpenses((x) => x.map((e) => {
+      // La dépense recatégorisée : choix manuel explicite, verrouillé.
+      if (e.id === id) return { ...e, categoryId, manualCat: true, needsReview: false };
+      // Propagation immédiate à toutes les dépenses similaires (même pattern),
+      // tous mois confondus — y compris celles verrouillées par la banque qui
+      // étaient dans l'ancienne catégorie. On épargne les choix manuels portant
+      // sur une AUTRE catégorie (décisions délibérées de l'utilisateur).
+      if (
+        pattern && categoryId !== "inter-comptes" &&
+        ruleMatchesLabel(e.label, pattern) &&
+        (!e.manualCat || e.categoryId === oldCat)
+      ) {
+        return { ...e, categoryId, needsReview: false };
+      }
+      return e;
+    }));
   };
 
   const updateExpense = (id, patch) =>
