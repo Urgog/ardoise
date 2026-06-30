@@ -172,7 +172,7 @@ export default function Ardoise() {
   useEffect(() => {
     if (!loaded) return;
     setExpenses((prev) => prev.map((e) => {
-      if (e.manualCat || e.categoryId !== "autre") return e;
+      if (e.manualCat) return e;
       const categoryId = guessCatWithRules(e.label, rules);
       const needsReview = categoryId === "autre";
       return { ...e, categoryId, needsReview };
