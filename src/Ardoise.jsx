@@ -569,12 +569,17 @@ export default function Ardoise() {
                   <PieIcon size={15} className="text-emerald-400" /> Répartition du mois
                 </h3>
                 {byCat.length ? (
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-40 w-40 shrink-0">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="relative h-56 w-56 shrink-0">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={byCat} dataKey="value" nameKey="label" innerRadius={48} outerRadius={70} paddingAngle={2} stroke="none">
-                            {byCat.map((c) => <Cell key={c.id} fill={c.color} />)}
+                          <Pie data={byCat} dataKey="value" nameKey="label" innerRadius={68} outerRadius={100} paddingAngle={2} stroke="none"
+                            onClick={(d) => setFilterCat((f) => f === d.id ? "all" : d.id)}>
+                            {byCat.map((c) => (
+                              <Cell key={c.id} fill={c.color}
+                                opacity={filterCat === "all" || filterCat === c.id ? 1 : 0.3}
+                                style={{ cursor: "pointer" }} />
+                            ))}
                           </Pie>
                           <Tooltip content={<DonutTip />} />
                         </PieChart>
@@ -584,11 +589,13 @@ export default function Ardoise() {
                         <span className="text-[10px] uppercase tracking-wider text-slate-500">total</span>
                       </div>
                     </div>
-                    <ul className="flex-1 space-y-1.5 text-sm">
-                      {byCat.slice(0, 6).map((c) => (
-                        <li key={c.id} className="flex items-center justify-between gap-2">
+                    <ul className="w-full space-y-1 text-sm">
+                      {byCat.map((c) => (
+                        <li key={c.id}
+                          className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1 transition-colors ${filterCat === c.id ? "bg-slate-700" : "hover:bg-slate-800"}`}
+                          onClick={() => setFilterCat((f) => f === c.id ? "all" : c.id)}>
                           <span className="flex items-center gap-2 text-slate-300">
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
                             {c.label}
                           </span>
                           <span className="font-mono text-slate-400">{fmtEUR.format(c.value)}</span>
