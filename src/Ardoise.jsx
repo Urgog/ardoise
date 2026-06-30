@@ -622,24 +622,26 @@ export default function Ardoise() {
 
 /* ---------------------------------------------------------------- NumInput — input numérique sans spinner, stable pendant la saisie décimale */
 
-function NumInput({ value, onCommit, className, ...rest }) {
-  const [local, setLocal] = useState(String(value ?? ""));
+function NumInput({ value, onCommit, className, min, max, step }) {
+  const fmt = (v) => String(v ?? "").replace(".", ",");
+  const parse = (s) => parseFloat(String(s).replace(",", ".")) || 0;
+
+  const [local, setLocal] = useState(fmt(value));
   const focused = React.useRef(false);
 
-  // Sync depuis l'extérieur seulement si l'input n'est pas en focus
   React.useEffect(() => {
-    if (!focused.current) setLocal(String(value ?? ""));
+    if (!focused.current) setLocal(fmt(value));
   }, [value]);
 
   return (
     <input
-      {...rest}
-      type="number"
+      type="text"
+      inputMode="decimal"
       className={className}
       value={local}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => setLocal(e.target.value.replace(".", ","))}
       onFocus={(e) => { focused.current = true; e.target.select(); }}
-      onBlur={() => { focused.current = false; onCommit(local); setLocal(String(parseFloat(local) || 0)); }}
+      onBlur={() => { focused.current = false; onCommit(String(parse(local))); setLocal(fmt(parse(local))); }}
       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
     />
   );
