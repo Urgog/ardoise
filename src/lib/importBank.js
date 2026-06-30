@@ -100,7 +100,7 @@ const norm = (s) =>
 /* ------------------------------------------------ mapping par en-tête */
 
 function findHeader(rows) {
-  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
     const cells = rows[i].map(norm);
     const hasDate = cells.some((c) => c.includes("date"));
     const hasMoney = cells.some(
@@ -128,7 +128,8 @@ function colIndexes(header) {
 function rowToExpenseByHeader(row, idx) {
   const date = toISODate(row[idx.date]);
   if (!date) return null;
-  const label = (row[idx.label] != null ? String(row[idx.label]) : "").trim() || "Import";
+  const label = (row[idx.label] != null ? String(row[idx.label]) : "")
+    .replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim() || "Import";
 
   let amount = null;
   let isCredit = false;
@@ -254,30 +255,46 @@ export function importBankQIF(file) {
 
 /* ------------------------------------------------ API publique */
 
+function parseCSVText(text, resolve) {
+  Papa.parse(text, {
+    skipEmptyLines: true,
+    delimiter: "",
+    complete: (res) => {
+      const rows = (res.data || []).filter((r) => Array.isArray(r) && r.length >= 2);
+      const headerRow = findHeader(rows);
+      const out = [];
+      if (headerRow >= 0) {
+        const idx = colIndexes(rows[headerRow]);
+        for (let i = headerRow + 1; i < rows.length; i++) {
+          const e = rowToExpenseByHeader(rows[i], idx);
+          if (e) out.push(e);
+        }
+      } else {
+        for (const r of rows) {
+          const e = rowToExpenseHeuristic(r);
+          if (e) out.push(e);
+        }
+      }
+      resolve(out);
+    },
+  });
+}
+
 export function importBankCSV(file) {
   return new Promise((resolve, reject) => {
-    Papa.parse(file, {
-      skipEmptyLines: true,
-      complete: (res) => {
-        const rows = (res.data || []).filter((r) => Array.isArray(r) && r.length >= 2);
-        const headerRow = findHeader(rows);
-        const out = [];
-
-        if (headerRow >= 0) {
-          const idx = colIndexes(rows[headerRow]);
-          for (let i = headerRow + 1; i < rows.length; i++) {
-            const e = rowToExpenseByHeader(rows[i], idx);
-            if (e) out.push(e);
-          }
-        } else {
-          for (const r of rows) {
-            const e = rowToExpenseHeuristic(r);
-            if (e) out.push(e);
-          }
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (ev) => {
+      try {
+        const buf = ev.target.result;
+        // Détecte UTF-8 BOM ou caractères de remplacement → fallback ISO-8859-1
+        let text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+        if (text.includes("�")) {
+          text = new TextDecoder("iso-8859-1").decode(buf);
         }
-        resolve(out);
-      },
-      error: reject,
-    });
+        parseCSVText(text, resolve);
+      } catch (e) { reject(e); }
+    };
+    reader.readAsArrayBuffer(file);
   });
 }

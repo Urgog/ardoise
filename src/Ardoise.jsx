@@ -394,6 +394,10 @@ export default function Ardoise() {
         input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
         input[type=number]{-moz-appearance:textfield}
       `}</style>
+      <input ref={fileRef} type="file" accept=".csv,.ofx,.qfx,.qif,text/csv" hidden
+        onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
+      <input ref={jsonRef} type="file" accept=".json,application/json" hidden
+        onChange={(e) => { if (e.target.files?.[0]) importJSONFile(e.target.files[0]); e.target.value = ""; }} />
 
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
 
@@ -552,10 +556,6 @@ export default function Ardoise() {
               className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
               <Download size={15} /> Exporter
             </button>
-            <input ref={fileRef} type="file" accept=".csv,.ofx,.qfx,.qif,text/csv" hidden
-              onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
-            <input ref={jsonRef} type="file" accept=".json,application/json" hidden
-              onChange={(e) => { if (e.target.files?.[0]) importJSONFile(e.target.files[0]); e.target.value = ""; }} />
           </div>
         </section>
 
