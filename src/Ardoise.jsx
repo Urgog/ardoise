@@ -293,7 +293,7 @@ export default function Ardoise() {
     setBudgets((b) => ({ ...b, [catId]: value }));
 
   const exportJSON = () => {
-    const data = JSON.stringify({ expenses, categories: cats, budgets, rules }, null, 2);
+    const data = JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -312,6 +312,8 @@ export default function Ardoise() {
         setExpenses(d.expenses);
         if (d.budgets) setBudgets(d.budgets);
         if (d.rules) setRules(d.rules);
+        if (d.forecastPeople?.length) setForecastPeople(d.forecastPeople);
+        if (d.forecastItems) setForecastItems(d.forecastItems);
         alert("Restauration réussie.");
       } catch {
         alert("Fichier JSON invalide ou corrompu.");
