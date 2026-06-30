@@ -493,7 +493,7 @@ export default function Ardoise() {
 
         <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Stat label="Moyenne / jour" value={fmtEUR.format(monthTotal / daysElapsed)} />
-          <Stat label="Nombre d'achats" value={monthExp.length} mono />
+          <Stat label="Nombre d'achats" value={monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).length} mono />
           <Stat
             label="Poste principal"
             value={topCat ? topCat.label : "—"}
