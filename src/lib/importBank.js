@@ -147,6 +147,9 @@ function colIndexes(header) {
     montant: find("montant"),
     debit: find("debit"),
     credit: find("credit"),
+    // Colonne "Sous-catégorie" de certains exports (ex. Crédit Agricole) :
+    // permet de distinguer un virement interne (entre comptes) d'un externe.
+    souscategorie: h.findIndex((c) => c.includes("sous") && c.includes("categorie")),
   };
 }
 
@@ -180,7 +183,12 @@ function rowToExpenseByHeader(row, idx) {
   }
   if (amount == null) return null;
 
-  return { amount, label, categoryId: guessCat(label), date, isCredit };
+  // Virement interne (entre comptes du titulaire) signalé par la banque → flag
+  // transmis à l'app, qui le classera en "inter-comptes" de façon fiable.
+  const subCat = idx.souscategorie >= 0 ? norm(row[idx.souscategorie]) : "";
+  const bankInternal = subCat === "virements internes" || subCat === "virement interne";
+
+  return { amount, label, categoryId: guessCat(label), date, isCredit, ...(bankInternal ? { bankInternal: true } : {}) };
 }
 
 // Fallback heuristique quand aucune en-tête n'est trouvée : on scanne la ligne.

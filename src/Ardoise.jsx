@@ -369,7 +369,10 @@ export default function Ardoise() {
       else if (ext === "qif") parsed = await importBankQIF(file);
       else parsed = await importBankCSV(file);
       // applique les règles utilisateur par-dessus l'auto-cat
-      parsed = parsed.map((e) => {
+      parsed = parsed.map(({ bankInternal, ...e }) => {
+        // Virement interne signalé par la banque : classé en inter-comptes et
+        // verrouillé (manualCat) pour ne pas être ré-évalué par les règles.
+        if (bankInternal) return { ...e, categoryId: "inter-comptes", manualCat: true, needsReview: false };
         const categoryId = guessCatWithRules(e.label, rules) || e.categoryId;
         const needsReview = categoryId === "autre" && !hasUserRuleMatch(e.label, rules);
         return { ...e, categoryId, ...(needsReview ? { needsReview: true } : {}) };
