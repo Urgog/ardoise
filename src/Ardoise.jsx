@@ -237,6 +237,8 @@ export default function Ardoise() {
     setExpenses((x) => x.map((e) => (e.categoryId === id ? { ...e, categoryId: "autre" } : e)));
     setCats((c) => c.filter((x) => x.id !== id));
   };
+  const updateCatDef = (id, patch) =>
+    setCats((c) => c.map((x) => (x.id === id ? { ...x, ...patch } : x)));
 
   const handleImport = async (file) => {
     try {
@@ -596,7 +598,7 @@ export default function Ardoise() {
       {showSettings && (
         <SettingsPanel
           cats={cats} byCat={byCat} budgets={budgets} rules={rules}
-          onBudget={setCatBudget} onAddCat={addCat} onRemoveCat={removeCat}
+          onAddCat={addCat} onRemoveCat={removeCat} onUpdateCat={updateCatDef}
           onChangeRules={(newRules) => {
             setRules(newRules);
             setExpenses((x) => x.map((e) => {
@@ -889,19 +891,37 @@ function EmptyState() {
   );
 }
 
-function SettingsPanel({ cats, byCat, budgets, rules, onBudget, onAddCat, onRemoveCat, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
+function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
   const [tab, setTab] = useState("categories");
+  // catégories
   const [lbl, setLbl] = useState("");
   const [color, setColor] = useState("#22D3EE");
+  const [editCat, setEditCat] = useState(null); // {id, label, color}
+  // règles
   const [pattern, setPattern] = useState("");
   const [ruleCatId, setRuleCatId] = useState(cats[0]?.id || "autre");
-  const totalById = Object.fromEntries(byCat.map((c) => [c.id, c.value]));
+  const [editRuleIdx, setEditRuleIdx] = useState(null); // index en cours d'édition
+  const [editRulePattern, setEditRulePattern] = useState("");
+  const [editRuleCatId, setEditRuleCatId] = useState("");
 
   const TABS = [
     { id: "categories", label: "Catégories" },
     { id: "rules", label: "Règles" },
     { id: "data", label: "Données" },
   ];
+
+  const saveEditCat = () => {
+    if (!editCat) return;
+    onUpdateCat(editCat.id, { label: editCat.label, color: editCat.color });
+    setEditCat(null);
+  };
+
+  const saveEditRule = () => {
+    if (editRuleIdx === null) return;
+    const updated = rules.map((r, i) => i === editRuleIdx ? { pattern: editRulePattern, categoryId: editRuleCatId } : r);
+    onChangeRules(updated);
+    setEditRuleIdx(null);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
@@ -914,7 +934,6 @@ function SettingsPanel({ cats, byCat, budgets, rules, onBudget, onAddCat, onRemo
           <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
         </div>
 
-        {/* Onglets */}
         <div className="mb-4 flex gap-1 rounded-lg border border-slate-800 bg-slate-950 p-1">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -927,23 +946,33 @@ function SettingsPanel({ cats, byCat, budgets, rules, onBudget, onAddCat, onRemo
         {/* Catégories */}
         {tab === "categories" && (
           <>
-            <ul className="mb-3 max-h-52 space-y-1 overflow-y-auto">
+            <ul className="mb-3 max-h-56 space-y-1 overflow-y-auto">
               {cats.map((c) => (
-                <li key={c.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
-                  <span className="flex flex-1 items-center gap-2 text-sm text-slate-200">
-                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: c.color }} />
-                    {c.label}
-                  </span>
-                  <span className="w-20 text-right font-mono text-xs text-slate-500">{totalById[c.id] ? fmtEUR.format(totalById[c.id]) : "—"}</span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-slate-600">Budget</span>
-                    <input type="number" min="0" placeholder="—" value={budgets[c.id] || ""}
-                      onChange={(ev) => onBudget(c.id, ev.target.value ? parseFloat(ev.target.value) : 0)}
-                      className="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-0.5 text-xs text-slate-200 outline-none focus:border-emerald-500" />
-                    <span className="text-xs text-slate-600">€</span>
-                  </div>
-                  {!c.builtin && (
-                    <button onClick={() => onRemoveCat(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
+                <li key={c.id} className="rounded-lg border border-transparent hover:border-slate-800 hover:bg-slate-800/30">
+                  {editCat?.id === c.id ? (
+                    /* Mode édition */
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <input type="color" value={editCat.color}
+                        onChange={(e) => setEditCat((x) => ({ ...x, color: e.target.value }))}
+                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-slate-700 bg-transparent" />
+                      <input autoFocus value={editCat.label}
+                        onChange={(e) => setEditCat((x) => ({ ...x, label: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveEditCat(); if (e.key === "Escape") setEditCat(null); }}
+                        className="flex-1 rounded border border-emerald-600 bg-slate-950 px-2 py-1 text-sm text-slate-100 outline-none" />
+                      <button onClick={saveEditCat} className="text-emerald-400 hover:text-emerald-300"><Check size={15} /></button>
+                      <button onClick={() => setEditCat(null)} className="text-slate-500 hover:text-slate-300"><X size={15} /></button>
+                    </div>
+                  ) : (
+                    /* Mode affichage */
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: c.color }} />
+                      <span className="flex-1 text-sm text-slate-200">{c.label}</span>
+                      <button onClick={() => setEditCat({ id: c.id, label: c.label, color: c.color })}
+                        className="text-slate-600 hover:text-slate-300"><Pencil size={14} /></button>
+                      {!c.builtin && (
+                        <button onClick={() => onRemoveCat(c.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={14} /></button>
+                      )}
+                    </div>
                   )}
                 </li>
               ))}
@@ -966,18 +995,40 @@ function SettingsPanel({ cats, byCat, budgets, rules, onBudget, onAddCat, onRemo
         {tab === "rules" && (
           <>
             <p className="mb-3 text-xs text-slate-500">Si le libellé contient le mot-clé, la catégorie est appliquée à l'import. Les règles perso ont priorité sur les règles par défaut.</p>
-            <ul className="mb-3 max-h-48 space-y-1 overflow-y-auto">
+            <ul className="mb-3 max-h-52 space-y-1 overflow-y-auto">
               {rules.length === 0 && <li className="py-4 text-center text-xs text-slate-600">Aucune règle personnalisée.</li>}
               {rules.map((r, i) => {
                 const cat = cats.find((c) => c.id === r.categoryId);
                 return (
-                  <li key={i} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/50">
-                    <span className="flex-1 font-mono text-sm text-slate-200">"{r.pattern}"</span>
-                    <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                      <span className="h-2 w-2 rounded-full" style={{ background: cat?.color || "#94A3B8" }} />
-                      {cat?.label || r.categoryId}
-                    </span>
-                    <button onClick={() => onChangeRules(rules.filter((_, idx) => idx !== i))} className="text-slate-600 hover:text-rose-400"><Trash2 size={15} /></button>
+                  <li key={i} className="rounded-lg border border-transparent hover:border-slate-800 hover:bg-slate-800/30">
+                    {editRuleIdx === i ? (
+                      /* Mode édition */
+                      <div className="flex items-center gap-2 px-2 py-1.5">
+                        <input autoFocus value={editRulePattern}
+                          onChange={(e) => setEditRulePattern(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveEditRule(); if (e.key === "Escape") setEditRuleIdx(null); }}
+                          className="flex-1 rounded border border-emerald-600 bg-slate-950 px-2 py-1 font-mono text-sm text-slate-100 outline-none" />
+                        <select value={editRuleCatId} onChange={(e) => setEditRuleCatId(e.target.value)}
+                          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none focus:border-emerald-500">
+                          {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        </select>
+                        <button onClick={saveEditRule} className="text-emerald-400 hover:text-emerald-300"><Check size={15} /></button>
+                        <button onClick={() => setEditRuleIdx(null)} className="text-slate-500 hover:text-slate-300"><X size={15} /></button>
+                      </div>
+                    ) : (
+                      /* Mode affichage */
+                      <div className="flex items-center gap-2 px-2 py-1.5">
+                        <span className="flex-1 font-mono text-sm text-slate-200">"{r.pattern}"</span>
+                        <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                          <span className="h-2 w-2 rounded-full" style={{ background: cat?.color || "#94A3B8" }} />
+                          {cat?.label || r.categoryId}
+                        </span>
+                        <button onClick={() => { setEditRuleIdx(i); setEditRulePattern(r.pattern); setEditRuleCatId(r.categoryId); }}
+                          className="text-slate-600 hover:text-slate-300"><Pencil size={14} /></button>
+                        <button onClick={() => onChangeRules(rules.filter((_, idx) => idx !== i))}
+                          className="text-slate-600 hover:text-rose-400"><Trash2 size={14} /></button>
+                      </div>
+                    )}
                   </li>
                 );
               })}
