@@ -104,7 +104,7 @@ export default function Ardoise() {
   useEffect(() => {
     if (!loaded) return;
     storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
-  }, [expenses, cats, budgets, rules, loaded]);
+  }, [expenses, cats, budgets, rules, forecastPeople, forecastItems, loaded]);
 
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
