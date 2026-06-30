@@ -131,6 +131,8 @@ export default function Ardoise() {
   const [editExpense, setEditExpense] = useState(null);
   const [showYear, setShowYear] = useState(false);
   const [showForecast, setShowForecast] = useState(false);
+  const [showPiePanel, setShowPiePanel] = useState(true);
+  const [showBarPanel, setShowBarPanel] = useState(true);
   const [budgets, setBudgets] = useState({});
   const [rules, setRules] = useState([]);
   const [forecastPeople, setForecastPeople] = useState([{ id: "p1", name: "Moi" }, { id: "p2", name: "Autre" }]);
@@ -563,12 +565,13 @@ export default function Ardoise() {
           <EmptyState />
         ) : (
           <>
-            <section className="mb-6 grid gap-4 lg:grid-cols-5">
+            <section className="mb-6 grid items-start gap-4 lg:grid-cols-5">
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 lg:col-span-2">
-                <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
-                  <PieIcon size={15} className="text-emerald-400" /> Répartition du mois
-                </h3>
-                {byCat.length ? (
+                <button className="mb-2 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowPiePanel((v) => !v)}>
+                  <span className="flex items-center gap-2"><PieIcon size={15} className="text-emerald-400" /> Répartition du mois</span>
+                  <ChevronRight size={14} className={`text-slate-500 transition-transform ${showPiePanel ? "rotate-90" : ""}`} />
+                </button>
+                {showPiePanel && (byCat.length ? (
                   <div className="flex flex-col items-center gap-4">
                     <div className="relative h-56 w-56 shrink-0">
                       <ResponsiveContainer width="100%" height="100%">
@@ -603,12 +606,15 @@ export default function Ardoise() {
                       ))}
                     </ul>
                   </div>
-                ) : <p className="py-10 text-center text-sm text-slate-500">Aucune dépense ce mois-ci.</p>}
+                ) : <p className="py-10 text-center text-sm text-slate-500">Aucune dépense ce mois-ci.</p>)}
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 lg:col-span-3">
-                <h3 className="mb-3 text-sm font-medium text-slate-300">Évolution sur 12 mois</h3>
-                <div className="h-48 w-full">
+                <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowBarPanel((v) => !v)}>
+                  <span>Évolution sur 12 mois</span>
+                  <ChevronRight size={14} className={`text-slate-500 transition-transform ${showBarPanel ? "rotate-90" : ""}`} />
+                </button>
+                {showBarPanel && <div className="h-48 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={series} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
                       <XAxis dataKey="lbl" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -619,7 +625,7 @@ export default function Ardoise() {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
+                </div>}
               </div>
             </section>
 
