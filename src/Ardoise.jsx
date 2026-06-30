@@ -651,6 +651,17 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
       it.id === itemId ? { ...it, pcts: { ...it.pcts, [pid]: val === "" ? "" : parseFloat(val) || 0 } } : it
     ));
 
+  // Saisie directe du montant → recalcule le %
+  const updateAmount = (itemId, pid, val) => {
+    const amount = val === "" ? 0 : parseFloat(val) || 0;
+    onChangeItems(items.map((it) => {
+      if (it.id !== itemId) return it;
+      const total = parseFloat(it.total) || 0;
+      const pct = total > 0 ? Math.round((amount / total) * 10000) / 100 : 0;
+      return { ...it, pcts: { ...it.pcts, [pid]: pct } };
+    }));
+  };
+
   const removeItem = (id) => onChangeItems(items.filter((it) => it.id !== id));
 
   const addPerson = () => {
@@ -732,20 +743,24 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                     <span className="text-xs text-slate-600">€</span>
                   </div>
                 </td>
-                {/* % + montant par personne */}
+                {/* % et montant par personne — les deux sont éditables et se synchronisent */}
                 {people.map((p) => (
-                  <td key={p.id} className="px-3 py-2">
-                    <div className="flex flex-col items-end gap-0.5">
+                  <td key={p.id} className="px-2 py-1.5">
+                    <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1">
-                        <input type="number" min="0" max="100" step="1"
+                        <input type="number" min="0" max="100" step="0.01"
                           value={item.pcts?.[p.id] ?? 0}
                           onChange={(e) => updatePct(item.id, p.id, e.target.value)}
                           className="w-16 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-xs text-slate-200 outline-none focus:border-emerald-500" />
                         <span className="text-xs text-slate-600">%</span>
                       </div>
-                      <span className="font-mono text-xs text-emerald-400 tabular-nums">
-                        {fmtEUR.format(personAmount(item, p.id))}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" step="0.01"
+                          value={Math.round(personAmount(item, p.id) * 100) / 100}
+                          onChange={(e) => updateAmount(item.id, p.id, e.target.value)}
+                          className="w-16 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-right font-mono text-xs text-emerald-400 outline-none focus:border-emerald-500" />
+                        <span className="text-xs text-slate-600">€</span>
+                      </div>
                     </div>
                   </td>
                 ))}
