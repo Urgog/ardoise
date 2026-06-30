@@ -656,22 +656,20 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
   const updateAmount = (itemId, pid, val) =>
     onChangeItems(items.map((it) => {
       if (it.id !== itemId) return it;
-      const total = parseFloat(it.total) || 0;
       const amount = val === "" ? 0 : parseFloat(val) || 0;
-      if (total > 0) {
-        // cas normal : on dérive le % depuis le montant saisi
-        const pct = Math.round((amount / total) * 10000) / 100;
-        return applyPct(it, pid, pct);
+      // Garde les montants des autres personnes, met à jour uniquement celle saisie,
+      // recalcule le total et les % en conséquence.
+      const newAmounts = {};
+      people.forEach((p) => { newAmounts[p.id] = p.id === pid ? amount : personAmount(it, p.id); });
+      const newTotal = Math.round(people.reduce((s, p) => s + newAmounts[p.id], 0) * 100) / 100;
+      const newPcts = {};
+      if (newTotal > 0) {
+        people.forEach((p) => { newPcts[p.id] = Math.round((newAmounts[p.id] / newTotal) * 10000) / 100; });
+      } else {
+        const eq = Math.round(10000 / people.length) / 100;
+        people.forEach((p) => { newPcts[p.id] = eq; });
       }
-      // total non renseigné : on dérive le total depuis le montant et le % existant
-      const existingPct = parseFloat(it.pcts?.[pid]) || 0;
-      if (existingPct > 0) {
-        // total = montant / (pct/100), les autres personnes gardent leurs % et voient leur montant calculé automatiquement
-        const newTotal = Math.round((amount / (existingPct / 100)) * 100) / 100;
-        return { ...it, total: newTotal };
-      }
-      // % aussi à 0 : on met cette personne à 100 % et le total = montant
-      return applyPct({ ...it, total: amount }, pid, 100);
+      return { ...it, total: newTotal, pcts: newPcts };
     }));
 
   const addItem = () => {
