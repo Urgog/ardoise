@@ -7,7 +7,7 @@ import {
   Repeat, ShoppingBag, MoreHorizontal, Tag, Upload, Download, X, TrendingDown,
   TrendingUp, Wallet, Calendar, Search, PieChart as PieIcon, Pencil, Check,
   FileJson, BarChart2, AlertTriangle, ChevronLeft, ChevronRight, BookOpen,
-  Settings, RotateCcw, ClipboardList, UserPlus, Users,
+  Settings, RotateCcw, ClipboardList, UserPlus, Users, Sun, Moon,
 } from "lucide-react";
 import { storage } from "./lib/storage";
 import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUserRuleMatch } from "./lib/importBank";
@@ -133,6 +133,7 @@ export default function Ardoise() {
   const [showForecast, setShowForecast] = useState(false);
   const [showPiePanel, setShowPiePanel] = useState(true);
   const [showBarPanel, setShowBarPanel] = useState(true);
+  const [theme, setTheme] = useState(() => (storage.get("theme")?.value === "light" ? "light" : "dark"));
   const [budgets, setBudgets] = useState({});
   const [rules, setRules] = useState([]);
   const [forecastPeople, setForecastPeople] = useState([{ id: "p1", name: "Moi" }, { id: "p2", name: "Autre" }]);
@@ -387,7 +388,7 @@ export default function Ardoise() {
   const empty = expenses.length === 0;
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased">
+    <div className={`min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased ${theme === "light" ? "theme-light" : ""}`}>
       <style>{`
         select option { background:#0f172a; }
         ::-webkit-scrollbar{height:8px;width:8px}
@@ -395,6 +396,37 @@ export default function Ardoise() {
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
         input[type=number]{-moz-appearance:textfield}
+
+        /* ---- Thème clair : remappe les couleurs sombres sous .theme-light uniquement ---- */
+        .theme-light{ color-scheme:light; }
+        .theme-light select option{ background:#ffffff; }
+        .theme-light ::-webkit-scrollbar-thumb{ background:#cbd5e1; }
+        /* fonds */
+        .theme-light .bg-slate-950{ background-color:#f1f5f9 !important; }
+        .theme-light .bg-slate-900{ background-color:#ffffff !important; }
+        .theme-light .bg-slate-800{ background-color:#e2e8f0 !important; }
+        .theme-light .bg-slate-700{ background-color:#cbd5e1 !important; }
+        /* dégradé de l'encart total */
+        .theme-light .from-slate-900{ --tw-gradient-from:#ffffff var(--tw-gradient-from-position) !important; --tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to) !important; }
+        .theme-light .to-slate-900\\/40{ --tw-gradient-to:rgba(241,245,249,0.6) var(--tw-gradient-to-position) !important; }
+        /* textes (du plus clair au plus sombre en dark → inversion) */
+        .theme-light .text-slate-50,
+        .theme-light .text-slate-100,
+        .theme-light .text-slate-200{ color:#0f172a !important; }
+        .theme-light .text-slate-300{ color:#334155 !important; }
+        .theme-light .text-slate-400{ color:#475569 !important; }
+        .theme-light .text-slate-500{ color:#64748b !important; }
+        .theme-light .text-slate-600{ color:#94a3b8 !important; }
+        /* bordures */
+        .theme-light .border-slate-800{ border-color:#e2e8f0 !important; }
+        .theme-light .border-slate-700{ border-color:#cbd5e1 !important; }
+        .theme-light .border-slate-600{ border-color:#94a3b8 !important; }
+        .theme-light .border-slate-500{ border-color:#64748b !important; }
+        .theme-light .divide-slate-800 > * + *{ border-color:#e2e8f0 !important; }
+        /* hovers */
+        .theme-light .hover\\:bg-slate-800:hover{ background-color:#e2e8f0 !important; }
+        .theme-light .hover\\:border-slate-600:hover{ border-color:#94a3b8 !important; }
+        .theme-light .hover\\:border-slate-500:hover{ border-color:#64748b !important; }
       `}</style>
       <input ref={fileRef} type="file" accept=".csv,.ofx,.qfx,.qif,text/csv" hidden
         onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
@@ -438,6 +470,13 @@ export default function Ardoise() {
                 </select>
               </>
             )}
+            <button
+              onClick={() => setTheme((t) => { const next = t === "dark" ? "light" : "dark"; storage.set("theme", next); return next; })}
+              title={theme === "dark" ? "Thème clair" : "Thème sombre"}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 text-slate-500 transition hover:border-slate-600 hover:text-slate-300"
+            >
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
             <button
               onClick={() => setShowSettings(true)}
               title="Paramètres"
