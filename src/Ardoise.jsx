@@ -241,6 +241,7 @@ export default function Ardoise() {
   const [rules, setRules] = useState([]);
   const [forecastPeople, setForecastPeople] = useState([{ id: "p1", name: "Moi" }, { id: "p2", name: "Autre" }]);
   const [forecastItems, setForecastItems] = useState([]);
+  const [undo, setUndo] = useState(null); // { snapshot: [...expenses], label } pour annuler une suppression
   const fileRef = useRef(null);
   const jsonRef = useRef(null);
 
@@ -271,7 +272,18 @@ export default function Ardoise() {
 
   useEffect(() => {
     if (!loaded) return;
-    storage.set(KEY, JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems }));
+    const payload = JSON.stringify({ expenses, categories: cats, budgets, rules, forecastPeople, forecastItems });
+    // Débounce : coalesce les écritures rapprochées (saisie, import) en une seule.
+    const t = setTimeout(() => {
+      const ok = storage.set(KEY, payload);
+      if (!ok) {
+        alert("Sauvegarde impossible : le stockage du navigateur est saturé. Exporte tes données (JSON) pour ne rien perdre.");
+      } else if (payload.length > 4_000_000) {
+        // localStorage ~5 Mo : on prévient avant d'atteindre la limite.
+        console.warn(`Ardoise : données volumineuses (${Math.round(payload.length / 1024)} Ko), proche de la limite de stockage.`);
+      }
+    }, 500);
+    return () => clearTimeout(t);
   }, [expenses, cats, budgets, rules, forecastPeople, forecastItems, loaded]);
 
   // Reclassifie les dépenses en "Autre" sans manualCat quand les règles changent ou au démarrage
@@ -364,12 +376,22 @@ export default function Ardoise() {
     setMonth(monthOf(date));
   };
 
-  const removeExpense = (id) => setExpenses((x) => x.filter((e) => e.id !== id));
+  const removeExpense = (id) => setExpenses((x) => {
+    if (x.some((e) => e.id === id)) setUndo({ snapshot: x, label: "Dépense supprimée" });
+    return x.filter((e) => e.id !== id);
+  });
 
   const resetData = () => {
-    if (!window.confirm("Supprimer toutes les dépenses ? Les catégories, budgets et règles sont conservés. Cette action est irréversible.")) return;
-    setExpenses([]);
+    if (!window.confirm("Supprimer toutes les dépenses ? Les catégories, budgets et règles sont conservés.")) return;
+    setExpenses((x) => { if (x.length) setUndo({ snapshot: x, label: `${x.length} dépense(s) supprimée(s)` }); return []; });
   };
+
+  // Auto-fermeture du bandeau « Annuler » après 6 s.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 6000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   const updateCat = (id, categoryId) => {
     const target = expenses.find((e) => e.id === id);
@@ -495,9 +517,21 @@ export default function Ardoise() {
         return;
       }
       setExpenses((x) => {
-        const existing = new Set(x.map((e) => `${e.date}|${e.amount}|${e.label}`));
-        const news = parsed.filter((e) => !existing.has(`${e.date}|${e.amount}|${e.label}`));
-        const added = news.map((e) => ({ id: uid(), ...e }));
+        // Déduplication par comptage : on ne saute une ligne que si ce couple
+        // (date|montant|libellé) existe déjà AUTANT de fois en base. Deux vraies
+        // transactions identiques le même jour sont donc conservées.
+        const remaining = new Map();
+        for (const e of x) {
+          const k = `${e.date}|${e.amount}|${e.label}`;
+          remaining.set(k, (remaining.get(k) || 0) + 1);
+        }
+        const added = [];
+        for (const e of parsed) {
+          const k = `${e.date}|${e.amount}|${e.label}`;
+          const n = remaining.get(k) || 0;
+          if (n > 0) remaining.set(k, n - 1); // déjà présent → on saute cette occurrence
+          else added.push({ id: uid(), ...e });
+        }
         const skipped = parsed.length - added.length;
         const msg = added.length
           ? `${added.length} dépense(s) importée(s)${skipped ? ` · ${skipped} doublon(s) ignoré(s)` : ""}.`
@@ -912,21 +946,27 @@ export default function Ardoise() {
         <SettingsPanel
           cats={cats} byCat={byCat} budgets={budgets} rules={rules}
           onAddCat={addCat} onRemoveCat={removeCat} onUpdateCat={updateCatDef}
-          onChangeRules={(newRules) => {
-            setRules(newRules);
-            setExpenses((x) => x.map((e) => {
-              if (e.manualCat) return e;
-              const categoryId = guessCatWithRules(e.label, newRules);
-              const needsReview = categoryId === "autre";
-              return { ...e, categoryId, needsReview };
-            }));
-          }} onExportJSON={exportJSON}
+          onChangeRules={(newRules) => setRules(newRules)}
+          onExportJSON={exportJSON}
           onImportJSON={() => jsonRef.current?.click()}
           onReset={resetData} onClose={() => setShowSettings(false)}
         />
       )}
       {editExpense && (
         <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, { ...patch, manualCat: true }); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
+      )}
+      {undo && (
+        <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 shadow-lg">
+            <span>{undo.label}</span>
+            <button
+              onClick={() => { setExpenses(undo.snapshot); setUndo(null); }}
+              className="flex items-center gap-1 font-semibold text-emerald-400 hover:text-emerald-300"
+            >
+              <RotateCcw size={14} /> Annuler
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1477,24 +1517,14 @@ function EditExpenseModal({ expense, cats, onSave, onClose }) {
 }
 
 function YearView({ expenses, year, catById }) {
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const m = String(i + 1).padStart(2, "0");
-    const ym = `${year}-${m}`;
-    const exps = expenses.filter((e) => e.date.startsWith(ym));
-    const total = exps.reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0);
-    const label = new Date(+year, i, 1).toLocaleDateString("fr-FR", { month: "short" });
-    return { ym, label, total, exps };
-  });
-  const yearTotal = months.reduce((s, m) => s + m.total, 0);
-  const max = Math.max(...months.map((m) => m.total), 1);
-
   const [selYear, setSelYear] = useState(+year);
-  const displayMonths = months.map((m, i) => ({
-    ...m,
-    label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }),
-    ym: `${selYear}-${String(i + 1).padStart(2, "0")}`,
-    total: expenses.filter((e) => e.date.startsWith(`${selYear}-${String(i + 1).padStart(2, "0")}`) && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0),
-  }));
+  const displayMonths = Array.from({ length: 12 }, (_, i) => {
+    const ym = `${selYear}-${String(i + 1).padStart(2, "0")}`;
+    const total = expenses
+      .filter((e) => e.date.startsWith(ym) && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal)
+      .reduce((s, e) => s + e.amount, 0);
+    return { ym, label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }), total };
+  });
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
   const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
 
