@@ -669,7 +669,7 @@ export default function Ardoise() {
   const empty = expenses.length === 0;
 
   return (
-    <div className={`min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased ${theme === "light" ? "theme-light" : ""}`}>
+    <div className={`app-bg min-h-[100dvh] w-full text-slate-100 font-sans antialiased ${theme === "light" ? "theme-light" : ""}`}>
       <style>{`
         select option { background:#0f172a; }
         ::-webkit-scrollbar{height:8px;width:8px}
@@ -678,8 +678,31 @@ export default function Ardoise() {
         input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
         input[type=number]{-moz-appearance:textfield}
 
+        /* ---- base esthétique ---- */
+        html { -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+        * { -webkit-tap-highlight-color:transparent; }
+        ::selection { background:rgba(52,211,153,0.28); }
+        /* fond en dégradé radial (profondeur) */
+        .app-bg{ background:
+          radial-gradient(1100px 520px at 50% -8%, rgba(52,211,153,0.10), transparent 62%),
+          radial-gradient(900px 500px at 90% 0%, rgba(56,189,248,0.06), transparent 55%),
+          #020617; }
+        .theme-light.app-bg{ background:
+          radial-gradient(1100px 520px at 50% -8%, rgba(16,185,129,0.12), transparent 62%),
+          radial-gradient(900px 500px at 90% 0%, rgba(56,189,248,0.08), transparent 55%),
+          #eef2f7 !important; }
+        /* micro-interaction : léger enfoncement au clic */
+        button:active { transform:scale(0.97); }
+        button { transition:transform .08s ease, background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease; }
+        /* focus accessible discret */
+        :focus-visible { outline:2px solid rgba(52,211,153,0.6); outline-offset:2px; border-radius:8px; }
+        input:focus, select:focus, textarea:focus { outline:none; }
+        /* safe-area (encoches téléphone) */
+        .safe-x { padding-left:max(1rem,env(safe-area-inset-left)); padding-right:max(1rem,env(safe-area-inset-right)); }
+        .safe-b { padding-bottom:max(1rem,env(safe-area-inset-bottom)); }
+
         /* ---- Thème clair : remappe les couleurs sombres sous .theme-light uniquement ---- */
-        .theme-light{ color-scheme:light; background-color:#f1f5f9 !important; color:#0f172a !important; }
+        .theme-light{ color-scheme:light; color:#0f172a !important; }
         .theme-light select option{ background:#ffffff; }
         .theme-light ::-webkit-scrollbar-thumb{ background:#cbd5e1; }
         /* fonds */
@@ -708,72 +731,76 @@ export default function Ardoise() {
         .theme-light .hover\\:bg-slate-800:hover{ background-color:#e2e8f0 !important; }
         .theme-light .hover\\:border-slate-600:hover{ border-color:#94a3b8 !important; }
         .theme-light .hover\\:border-slate-500:hover{ border-color:#64748b !important; }
+        /* variantes glassy / opacité introduites par le polish esthétique */
+        .theme-light .bg-slate-900\\/60,
+        .theme-light .bg-slate-900\\/70{ background-color:#ffffff !important; }
+        .theme-light .bg-slate-800\\/40,
+        .theme-light .bg-slate-800\\/50{ background-color:#e2e8f0 !important; }
+        .theme-light .border-slate-800\\/80{ border-color:#e2e8f0 !important; }
+        .theme-light .hover\\:bg-slate-800\\/40:hover,
+        .theme-light .hover\\:bg-slate-800\\/50:hover{ background-color:#e2e8f0 !important; }
+        .theme-light .via-slate-900{ --tw-gradient-stops: var(--tw-gradient-from), #ffffff var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
       `}</style>
       <input ref={fileRef} type="file" accept=".csv,.ofx,.qfx,.qif,text/csv" hidden
         onChange={(e) => { if (e.target.files?.[0]) handleImport(e.target.files[0]); e.target.value = ""; }} />
       <input ref={jsonRef} type="file" accept=".json,application/json" hidden
         onChange={(e) => { if (e.target.files?.[0]) importJSONFile(e.target.files[0]); e.target.value = ""; }} />
 
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-5xl px-4 py-5 safe-x sm:px-6 sm:py-8">
 
-        <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-emerald-400">
-              <Wallet size={18} />
-              <span className="text-xs font-semibold uppercase tracking-[0.25em]">Ardoise</span>
+        <header className="mb-6 sm:mb-8">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 ring-1 ring-inset ring-emerald-500/25">
+                <Wallet size={18} />
+              </div>
+              <div className="leading-tight">
+                <p className="text-sm font-semibold tracking-tight text-slate-100">Ardoise</p>
+                <p className="text-xs text-slate-500">Suivi de dépenses</p>
+              </div>
             </div>
-            <h1 className="mt-1 text-sm text-slate-400">Suivi de dépenses · {monthLabel(month)}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { if (showForecast) { setShowForecast(false); } else { setShowYear((v) => !v); } }}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showYear && !showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
-            >
-              <BarChart2 size={14} /> {showYear && !showForecast ? "Vue mois" : showForecast ? "Vue mois" : "Vue année"}
-            </button>
-            <button
-              onClick={() => { setShowForecast((v) => !v); setShowYear(false); }}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${showForecast ? "border-emerald-500 text-emerald-400" : "border-slate-800 text-slate-400 hover:border-slate-600"}`}
-            >
-              <ClipboardList size={14} /> Prévis.
-            </button>
-            {!showYear && !showForecast && (
-              <>
-                <Calendar size={15} className="text-slate-500" />
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500"
-                >
-                  {months.map((m) => (
-                    <option key={m} value={m}>{monthLabel(m)}</option>
-                  ))}
-                </select>
-              </>
-            )}
-            {installPrompt && !installed && (
+            <div className="flex items-center gap-2">
+              {installPrompt && !installed && (
+                <button onClick={doInstall} title="Installer l'application"
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-emerald-500/60 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20">
+                  <Download size={15} /> <span className="hidden sm:inline">Installer</span>
+                </button>
+              )}
               <button
-                onClick={doInstall}
-                title="Installer l'application"
-                className="flex items-center gap-1.5 rounded-lg border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+                onClick={() => setTheme((t) => { const next = t === "dark" ? "light" : "dark"; storage.set("theme", next); return next; })}
+                title={theme === "dark" ? "Thème clair" : "Thème sombre"}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-200"
               >
-                <Download size={14} /> Installer
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                title="Paramètres"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+              >
+                <Settings size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+              <button onClick={() => { setShowYear(false); setShowForecast(false); }}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${!showYear && !showForecast ? "bg-slate-800 text-slate-100 shadow" : "text-slate-400 hover:text-slate-200"}`}>Mois</button>
+              <button onClick={() => { setShowYear(true); setShowForecast(false); }}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${showYear && !showForecast ? "bg-slate-800 text-slate-100 shadow" : "text-slate-400 hover:text-slate-200"}`}>Année</button>
+              <button onClick={() => { setShowForecast(true); setShowYear(false); }}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${showForecast ? "bg-slate-800 text-slate-100 shadow" : "text-slate-400 hover:text-slate-200"}`}>Prévis.</button>
+            </div>
+            {!showYear && !showForecast && (
+              <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3">
+                <Calendar size={15} className="text-slate-500" />
+                <select value={month} onChange={(e) => setMonth(e.target.value)}
+                  className="bg-transparent text-sm font-medium text-slate-200 outline-none">
+                  {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </select>
+              </div>
             )}
-            <button
-              onClick={() => setTheme((t) => { const next = t === "dark" ? "light" : "dark"; storage.set("theme", next); return next; })}
-              title={theme === "dark" ? "Thème clair" : "Thème sombre"}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 text-slate-500 transition hover:border-slate-600 hover:text-slate-300"
-            >
-              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
-            <button
-              onClick={() => setShowSettings(true)}
-              title="Paramètres"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 text-slate-500 transition hover:border-slate-600 hover:text-slate-300"
-            >
-              <Settings size={15} />
-            </button>
           </div>
         </header>
 
@@ -794,16 +821,16 @@ export default function Ardoise() {
           />
         )}
 
-        {!showForecast && <><section className="mb-6 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-900/40 p-6">
+        {!showForecast && <><section className="mb-5 overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-900/40 p-6 shadow-xl shadow-black/20 sm:p-7">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-widest text-slate-500">Dépensé ce mois</p>
-              <p className="mt-1 font-mono text-4xl font-semibold tabular-nums text-slate-50 sm:text-5xl">
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">Dépensé ce mois</p>
+              <p className="mt-1.5 font-mono text-[2.5rem] font-bold leading-none tabular-nums text-white sm:text-6xl">
                 {fmtEUR.format(monthTotal)}
               </p>
             </div>
             {delta !== null && (
-              <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${delta > 0 ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+              <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${delta > 0 ? "bg-rose-500/15 text-rose-400" : "bg-emerald-500/15 text-emerald-400"}`}>
                 {delta > 0 ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
                 {delta > 0 ? "+" : ""}{delta.toFixed(0)} % vs {monthLabel(prevMonth).split(" ")[0]}
               </div>
@@ -886,7 +913,7 @@ export default function Ardoise() {
           />
         </section>
 
-        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <section className="mb-6 rounded-3xl border border-slate-800/80 bg-slate-900/70 p-4 shadow-lg shadow-black/10 sm:p-5">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-12">
             <div className="col-span-2 sm:col-span-3">
               <Field label="Montant (€)">
@@ -923,19 +950,21 @@ export default function Ardoise() {
               </Field>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <button onClick={addExpense}
-              className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400">
               <Plus size={16} /> Ajouter la dépense
             </button>
-            <button onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
-              <Upload size={15} /> Importer un relevé (CSV)
-            </button>
-            <button onClick={exportCSV}
-              className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100">
-              <Download size={15} /> Exporter
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => fileRef.current?.click()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2.5 text-sm text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/50 hover:text-slate-100">
+                <Upload size={15} /> <span className="whitespace-nowrap">Importer (CSV)</span>
+              </button>
+              <button onClick={exportCSV}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-700 px-3 py-2.5 text-sm text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/50 hover:text-slate-100">
+                <Download size={15} /> Exporter
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1116,8 +1145,8 @@ export default function Ardoise() {
                 {visible.map((e) => {
                   const c = catById[e.categoryId] || { label: "Autre", color: "#94A3B8", id: "autre" };
                   return (
-                    <li key={e.id} className={`group flex items-center gap-3 py-2.5 ${e.needsReview ? "rounded-lg px-2 -mx-2 bg-amber-500/5" : ""}`}>
-                      <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                    <li key={e.id} className={`group flex items-center gap-3 -mx-2 rounded-xl px-2 py-2.5 transition hover:bg-slate-800/40 ${e.needsReview ? "bg-amber-500/5" : ""}`}>
+                      <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                         style={{ background: c.color + "22", color: c.color }}>
                         <CatIcon id={c.id} size={17} />
                         {e.needsReview && (
@@ -1157,12 +1186,12 @@ export default function Ardoise() {
                       <span className={`font-mono text-sm tabular-nums ${catById[e.categoryId]?.excludeFromTotal ? "text-slate-500" : e.isCredit ? "text-emerald-400" : "text-rose-400"}`}>
                         {e.isCredit ? "+" : "−"}{fmtEUR.format(e.amount)}
                       </span>
-                      <button onClick={() => setEditExpense(e)}
-                        className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-emerald-400">
+                      <button onClick={() => setEditExpense(e)} title="Modifier"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 opacity-100 transition hover:bg-slate-800 hover:text-emerald-400 sm:opacity-0 sm:group-hover:opacity-100">
                         <Pencil size={15} />
                       </button>
-                      <button onClick={() => removeExpense(e.id)}
-                        className="text-slate-600 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
+                      <button onClick={() => removeExpense(e.id)} title="Supprimer"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 opacity-100 transition hover:bg-slate-800 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100">
                         <Trash2 size={16} />
                       </button>
                     </li>
@@ -1203,7 +1232,7 @@ export default function Ardoise() {
         <EditExpenseModal expense={editExpense} cats={cats} onSave={(patch) => { updateExpense(editExpense.id, { ...patch, manualCat: true }); setEditExpense(null); }} onClose={() => setEditExpense(null)} />
       )}
       {undo && (
-        <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+        <div className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 shadow-lg">
             <span>{undo.label}</span>
             <button
@@ -1463,7 +1492,7 @@ function ForecastView({ people, items, onChangePeople, onChangeItems }) {
                   </React.Fragment>
                 ))}
                 <td className="px-2 py-2">
-                  <button onClick={() => removeItem(item.id)} className="text-slate-700 opacity-0 transition group-hover:opacity-100 hover:text-rose-400">
+                  <button onClick={() => removeItem(item.id)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 opacity-100 transition hover:bg-slate-800 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100">
                     <Trash2 size={15} />
                   </button>
                 </td>
@@ -1516,9 +1545,9 @@ function Field({ label, children }) {
 
 function Stat({ label, value, sub, mono, color }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <p className="text-xs uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={`mt-1 truncate text-lg font-semibold text-slate-100 ${mono ? "font-mono" : ""}`}
+    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4 shadow-sm shadow-black/5 transition hover:border-slate-700">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={`mt-1.5 truncate text-lg font-semibold text-slate-100 ${mono ? "font-mono tabular-nums" : ""}`}
         style={color ? { color } : undefined}>
         {value}
       </p>
@@ -1622,7 +1651,7 @@ function SettingsPanel({ cats, rules, budgets, expenses = [], onAddCat, onRemove
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-t-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl shadow-black/40 safe-b sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
 
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
@@ -1803,7 +1832,7 @@ function EditExpenseModal({ expense, cats, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-2xl border border-slate-800 bg-slate-900 p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-t-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl shadow-black/40 safe-b sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-200">Modifier la dépense</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={18} /></button>
