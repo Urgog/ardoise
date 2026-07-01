@@ -246,6 +246,8 @@ export default function Ardoise() {
   const [forecastItems, setForecastItems] = useState([]);
   const [undo, setUndo] = useState(null); // { snapshot: [...expenses], label } pour annuler une suppression
   const [reviewMode, setReviewMode] = useState(false); // file de revue plein écran
+  const [installPrompt, setInstallPrompt] = useState(null); // événement PWA beforeinstallprompt
+  const [installed, setInstalled] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)")?.matches);
   const [showBudgets, setShowBudgets] = useState(() => storage.get("ui:budgets")?.value !== "0");
   const [showSavings, setShowSavings] = useState(true);
   const [showInsights, setShowInsights] = useState(true);
@@ -253,6 +255,25 @@ export default function Ardoise() {
   const [backupHidden, setBackupHidden] = useState(false);
   const fileRef = useRef(null);
   const jsonRef = useRef(null);
+
+  /* PWA : capte l'invite d'installation de Chrome pour proposer un bouton dédié */
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    const onInstalled = () => { setInstallPrompt(null); setInstalled(true); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const doInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
 
   /* persistance */
   useEffect(() => {
@@ -366,6 +387,15 @@ export default function Ardoise() {
   const monthSavings = useMemo(() => monthExp
     .filter((e) => catById[e.categoryId]?.excludeFromTotal)
     .reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
+  // Catégories d'investissement (PEA, bourse, placement…), détectées par libellé.
+  const investIds = useMemo(() => new Set(
+    cats.filter((c) => /investiss|\bpea\b|bourse|placement|\bper\b|assurance[\s-]?vie|crypto/i.test(c.label)).map((c) => c.id)
+  ), [cats]);
+  const hasInvest = investIds.size > 0;
+  // Investissement NET du mois (débits − crédits) sur ces catégories.
+  const monthInvest = useMemo(() => monthExp
+    .filter((e) => investIds.has(e.categoryId))
+    .reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, investIds]);
   const savingsRate = monthIncome > 0 ? ((monthIncome - monthTotal) / monthIncome) * 100 : null;
 
   // Insights : plus grosses variations par catégorie vs mois précédent.
@@ -649,7 +679,7 @@ export default function Ardoise() {
         input[type=number]{-moz-appearance:textfield}
 
         /* ---- Thème clair : remappe les couleurs sombres sous .theme-light uniquement ---- */
-        .theme-light{ color-scheme:light; }
+        .theme-light{ color-scheme:light; background-color:#f1f5f9 !important; color:#0f172a !important; }
         .theme-light select option{ background:#ffffff; }
         .theme-light ::-webkit-scrollbar-thumb{ background:#cbd5e1; }
         /* fonds */
@@ -720,6 +750,15 @@ export default function Ardoise() {
                   ))}
                 </select>
               </>
+            )}
+            {installPrompt && !installed && (
+              <button
+                onClick={doInstall}
+                title="Installer l'application"
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+              >
+                <Download size={14} /> Installer
+              </button>
             )}
             <button
               onClick={() => setTheme((t) => { const next = t === "dark" ? "light" : "dark"; storage.set("theme", next); return next; })}
@@ -979,8 +1018,11 @@ export default function Ardoise() {
                 </button>
                 {showSavings && (
                   <ul className="space-y-2 text-sm">
-                    <li className="flex items-center justify-between"><span className="text-slate-400">Épargne nette (viré − récupéré)</span><span className={`font-mono ${monthSavings >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthSavings)}</span></li>
-                    <li className="flex items-center justify-between"><span className="text-slate-400">Reste (gagné − dépensé)</span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Épargne livrets <span className="text-slate-600">(inter-comptes)</span></span><span className={`font-mono ${monthSavings >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthSavings)}</span></li>
+                    {hasInvest && (
+                      <li className="flex items-center justify-between"><span className="text-slate-400">Investissement <span className="text-slate-600">(PEA, bourse…)</span></span><span className={`font-mono ${monthInvest >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthInvest)}</span></li>
+                    )}
+                    <li className="flex items-center justify-between border-t border-slate-800 pt-2"><span className="text-slate-400">Non dépensé <span className="text-slate-600">(gagné − dépensé)</span></span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
                     <li className="flex items-center justify-between"><span className="text-slate-400">Taux d'épargne</span><span className="font-mono text-slate-200">{savingsRate != null ? `${Math.round(savingsRate)} %` : "—"}</span></li>
                   </ul>
                 )}
