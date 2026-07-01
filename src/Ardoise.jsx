@@ -366,6 +366,15 @@ export default function Ardoise() {
   const monthSavings = useMemo(() => monthExp
     .filter((e) => catById[e.categoryId]?.excludeFromTotal)
     .reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
+  // Catégories d'investissement (PEA, bourse, placement…), détectées par libellé.
+  const investIds = useMemo(() => new Set(
+    cats.filter((c) => /investiss|\bpea\b|bourse|placement|\bper\b|assurance[\s-]?vie|crypto/i.test(c.label)).map((c) => c.id)
+  ), [cats]);
+  const hasInvest = investIds.size > 0;
+  // Investissement NET du mois (débits − crédits) sur ces catégories.
+  const monthInvest = useMemo(() => monthExp
+    .filter((e) => investIds.has(e.categoryId))
+    .reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, investIds]);
   const savingsRate = monthIncome > 0 ? ((monthIncome - monthTotal) / monthIncome) * 100 : null;
 
   // Insights : plus grosses variations par catégorie vs mois précédent.
@@ -979,8 +988,11 @@ export default function Ardoise() {
                 </button>
                 {showSavings && (
                   <ul className="space-y-2 text-sm">
-                    <li className="flex items-center justify-between"><span className="text-slate-400">Épargne nette (viré − récupéré)</span><span className={`font-mono ${monthSavings >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthSavings)}</span></li>
-                    <li className="flex items-center justify-between"><span className="text-slate-400">Reste (gagné − dépensé)</span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Épargne livrets <span className="text-slate-600">(inter-comptes)</span></span><span className={`font-mono ${monthSavings >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthSavings)}</span></li>
+                    {hasInvest && (
+                      <li className="flex items-center justify-between"><span className="text-slate-400">Investissement <span className="text-slate-600">(PEA, bourse…)</span></span><span className={`font-mono ${monthInvest >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthInvest)}</span></li>
+                    )}
+                    <li className="flex items-center justify-between border-t border-slate-800 pt-2"><span className="text-slate-400">Non dépensé <span className="text-slate-600">(gagné − dépensé)</span></span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
                     <li className="flex items-center justify-between"><span className="text-slate-400">Taux d'épargne</span><span className="font-mono text-slate-200">{savingsRate != null ? `${Math.round(savingsRate)} %` : "—"}</span></li>
                   </ul>
                 )}
