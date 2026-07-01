@@ -246,6 +246,8 @@ export default function Ardoise() {
   const [forecastItems, setForecastItems] = useState([]);
   const [undo, setUndo] = useState(null); // { snapshot: [...expenses], label } pour annuler une suppression
   const [reviewMode, setReviewMode] = useState(false); // file de revue plein écran
+  const [installPrompt, setInstallPrompt] = useState(null); // événement PWA beforeinstallprompt
+  const [installed, setInstalled] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)")?.matches);
   const [showBudgets, setShowBudgets] = useState(() => storage.get("ui:budgets")?.value !== "0");
   const [showSavings, setShowSavings] = useState(true);
   const [showInsights, setShowInsights] = useState(true);
@@ -253,6 +255,25 @@ export default function Ardoise() {
   const [backupHidden, setBackupHidden] = useState(false);
   const fileRef = useRef(null);
   const jsonRef = useRef(null);
+
+  /* PWA : capte l'invite d'installation de Chrome pour proposer un bouton dédié */
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    const onInstalled = () => { setInstallPrompt(null); setInstalled(true); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const doInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
 
   /* persistance */
   useEffect(() => {
@@ -729,6 +750,15 @@ export default function Ardoise() {
                   ))}
                 </select>
               </>
+            )}
+            {installPrompt && !installed && (
+              <button
+                onClick={doInstall}
+                title="Installer l'application"
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+              >
+                <Download size={14} /> Installer
+              </button>
             )}
             <button
               onClick={() => setTheme((t) => { const next = t === "dark" ? "light" : "dark"; storage.set("theme", next); return next; })}
