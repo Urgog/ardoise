@@ -1,0 +1,14 @@
+{
+  "name": "Ardoise — Suivi de dépenses",
+  "short_name": "Ardoise",
+  "description": "Suivi de dépenses personnel, 100% local.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

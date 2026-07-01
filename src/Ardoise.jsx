@@ -15,6 +15,7 @@ import { importBankCSV, importBankOFX, importBankQIF, guessCatWithRules, hasUser
 /* ---------------------------------------------------------------- utilitaires */
 
 const KEY = "data";
+const EMPTY = []; // référence stable pour les mois sans dépense
 const fmtEUR = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 const fmtShort = (n) =>
   Math.abs(n) >= 1000 ? `${(n / 1000).toFixed(1).replace(".", ",")} k€` : `${Math.round(n)} €`;
@@ -42,10 +43,18 @@ const STOPWORDS = new Set([
   "mensuel", "mensuelle", "echeance", "reference",
 ]);
 
+// Un vrai mot-clé cohérent : uniquement des lettres (pas de chiffres ni de codes),
+// 3 à 15 caractères, au moins une voyelle, hors mots génériques. Rejette les
+// références type "CK3W26180M072679", "PAYLI2469664", les suites de consonnes, etc.
+const isValidKeyword = (w) =>
+  w.length >= 3 && w.length <= 15 && /^[a-z]+$/.test(w) && /[aeiouy]/.test(w) && !STOPWORDS.has(w);
+
 const extractPattern = (label) => {
   let s = label.toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/\./g, " ")
+    // tout ce qui n'est pas une lettre (chiffres, ponctuation, *, /, ') → espace :
+    // supprime dates, codes, montants et références sans reformater les mots.
+    .replace(/[^a-z\s]/g, " ")
     .trim();
 
   let prev;
@@ -57,14 +66,10 @@ const extractPattern = (label) => {
     ).trim();
   } while (s !== prev);
 
-  s = s.replace(/\b\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?\b/g, "");
-  s = s.replace(/\b\d{4,}\b/g, "");
-  s = s.replace(/\b(?:[a-z]+\d+|\d+[a-z]+)\b/g, "");
-  s = s.replace(/\b\w{1,2}\b/g, "");
   s = s.replace(/\b(sarl|sas|eurl|spa|inc|ltd|groupe|group|agence|magasin|boutique|store|market|france|paris|lyon|marseille|bordeaux|lille|nantes|strasbourg|metz|toulouse)\b/g, "");
   s = s.replace(/\s+/g, " ").trim();
 
-  const words = s.split(/\s+/).filter((w) => w.length >= 3 && /[a-z]/.test(w) && !STOPWORDS.has(w));
+  const words = s.split(/\s+/).filter(isValidKeyword);
   const pattern = words.slice(0, 3).join(" ").trim();
   return pattern.length >= 3 ? pattern : null;
 };
@@ -149,10 +154,8 @@ const sanitizeRules = (rules = []) =>
   rules
     .map((r) => {
       if (!r || !r.pattern || r.categoryId === "inter-comptes") return null;
-      const words = r.pattern.split(/\s+/).filter((w) => {
-        const n = normCat(w);
-        return n.length >= 3 && !STOPWORDS.has(n);
-      });
+      // ne garde que les vrais mots-clés cohérents (idem extractPattern)
+      const words = r.pattern.split(/\s+/).filter((w) => isValidKeyword(normCat(w)));
       const pattern = words.join(" ").trim();
       return pattern ? { ...r, pattern } : null;
     })
@@ -242,6 +245,12 @@ export default function Ardoise() {
   const [forecastPeople, setForecastPeople] = useState([{ id: "p1", name: "Moi" }, { id: "p2", name: "Autre" }]);
   const [forecastItems, setForecastItems] = useState([]);
   const [undo, setUndo] = useState(null); // { snapshot: [...expenses], label } pour annuler une suppression
+  const [reviewMode, setReviewMode] = useState(false); // file de revue plein écran
+  const [showBudgets, setShowBudgets] = useState(() => storage.get("ui:budgets")?.value !== "0");
+  const [showSavings, setShowSavings] = useState(true);
+  const [showInsights, setShowInsights] = useState(true);
+  const [showRecurring, setShowRecurring] = useState(true);
+  const [backupHidden, setBackupHidden] = useState(false);
   const fileRef = useRef(null);
   const jsonRef = useRef(null);
 
@@ -299,16 +308,21 @@ export default function Ardoise() {
 
   const catById = useMemo(() => Object.fromEntries(cats.map((c) => [c.id, c])), [cats]);
 
-  const months = useMemo(() => {
-    const set = new Set(expenses.map((e) => monthOf(e.date)));
-    set.add(monthOf(todayISO()));
-    return [...set].sort().reverse();
+  // Index des dépenses par mois : évite de re-filtrer tout le tableau à chaque
+  // agrégation (perf). Purement pour l'affichage — n'affecte pas la propagation.
+  const byMonth = useMemo(() => {
+    const m = {};
+    for (const e of expenses) (m[monthOf(e.date)] ||= []).push(e);
+    return m;
   }, [expenses]);
 
-  const monthExp = useMemo(
-    () => expenses.filter((e) => monthOf(e.date) === month),
-    [expenses, month]
-  );
+  const months = useMemo(() => {
+    const set = new Set(Object.keys(byMonth));
+    set.add(monthOf(todayISO()));
+    return [...set].sort().reverse();
+  }, [byMonth]);
+
+  const monthExp = byMonth[month] || EMPTY;
   const isTransfer = (e) => catById[e.categoryId]?.excludeFromTotal;
   const monthTotal = useMemo(() => monthExp.filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
   // Argent gagné dans le mois : crédits hors transferts inter-comptes.
@@ -341,18 +355,72 @@ export default function Ardoise() {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const total = expenses.filter((e) => monthOf(e.date) === ym && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0);
+      const total = (byMonth[ym] || EMPTY).filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0);
       out.push({ ym, total, lbl: d.toLocaleDateString("fr-FR", { month: "short" }), cur: ym === month });
     }
     return out;
-  }, [expenses, month]);
+  }, [byMonth, catById, month]);
+
+  // Épargne du mois : argent sorti vers les comptes exclus (inter-comptes / épargne).
+  const monthSavings = useMemo(() => monthExp.filter((e) => !e.isCredit && catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
+  const savingsRate = monthIncome > 0 ? ((monthIncome - monthTotal) / monthIncome) * 100 : null;
+
+  // Insights : plus grosses variations par catégorie vs mois précédent.
+  const insights = useMemo(() => {
+    const prevM = {};
+    (byMonth[prevMonth] || EMPTY).filter((e) => !e.isCredit && !catById[e.categoryId]?.excludeFromTotal).forEach((e) => (prevM[e.categoryId] = (prevM[e.categoryId] || 0) + e.amount));
+    const ids = new Set([...byCat.map((c) => c.id), ...Object.keys(prevM)]);
+    const rows = [];
+    ids.forEach((id) => {
+      const cur = byCat.find((c) => c.id === id)?.value || 0;
+      const prev = prevM[id] || 0;
+      const diff = cur - prev;
+      if (Math.abs(diff) < 1) return;
+      rows.push({ id, diff, cat: catById[id] || { label: id, color: "#94A3B8" }, pct: prev ? (diff / prev) * 100 : null });
+    });
+    return rows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 4);
+  }, [byMonth, prevMonth, byCat, catById]);
+
+  // Dépenses récurrentes : même libellé (pattern) sur au moins 3 mois distincts.
+  const recurring = useMemo(() => {
+    const groups = {};
+    for (const e of expenses) {
+      if (e.isCredit || catById[e.categoryId]?.excludeFromTotal) continue;
+      const p = extractPattern(e.label);
+      if (!p) continue;
+      (groups[p] ||= []).push(e);
+    }
+    const out = [];
+    for (const [p, list] of Object.entries(groups)) {
+      const monthsSet = new Set(list.map((e) => monthOf(e.date)));
+      if (monthsSet.size < 3) continue;
+      const last = [...list].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      const avg = list.reduce((s, e) => s + e.amount, 0) / list.length;
+      out.push({ pattern: p, months: monthsSet.size, avg, last: last.amount, label: last.label, catId: last.categoryId, changed: avg > 0 && Math.abs(last.amount - avg) / avg > 0.15 });
+    }
+    return out.sort((a, b) => b.months - a.months).slice(0, 8);
+  }, [expenses, catById]);
 
   const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
     return monthExp
       .filter((e) => filterCat === "all" ? true : filterCat === "__review__" ? e.needsReview : e.categoryId === filterCat)
-      .filter((e) => !query || e.label.toLowerCase().includes(query.toLowerCase()))
+      .filter((e) => {
+        if (!q) return true;
+        // recherche étendue : libellé, catégorie, montant
+        const cat = (catById[e.categoryId]?.label || "").toLowerCase();
+        return e.label.toLowerCase().includes(q) || cat.includes(q) ||
+          String(e.amount).includes(q) || fmtEUR.format(e.amount).toLowerCase().includes(q);
+      })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [monthExp, filterCat, query]);
+  }, [monthExp, filterCat, query, catById]);
+
+  // Rappel de sauvegarde : jamais exporté, ou dernière sauvegarde > 14 jours.
+  const backupDue = useMemo(() => {
+    if (expenses.length === 0 || backupHidden) return false;
+    const last = storage.get("lastBackup")?.value;
+    return !last || Date.now() - Number(last) > 14 * 24 * 60 * 60 * 1000;
+  }, [expenses.length, backupHidden]);
 
   const daysElapsed = useMemo(() => {
     const cur = monthOf(todayISO());
@@ -452,6 +520,8 @@ export default function Ardoise() {
     const a = document.createElement("a");
     a.href = url; a.download = "ardoise-sauvegarde.json"; a.click();
     URL.revokeObjectURL(url);
+    storage.set("lastBackup", String(Date.now()));
+    setBackupHidden(true);
   };
 
   const importJSONFile = (file) => {
@@ -659,6 +729,16 @@ export default function Ardoise() {
           </div>
         </header>
 
+        {backupDue && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-300">
+            <span className="flex items-center gap-2"><Download size={15} className="shrink-0" /> Pense à sauvegarder tes données (export JSON) — elles ne sont stockées que dans ce navigateur.</span>
+            <span className="flex items-center gap-2">
+              <button onClick={exportJSON} className="rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-sky-400">Sauvegarder</button>
+              <button onClick={() => setBackupHidden(true)} className="text-sky-400/70 hover:text-sky-300"><X size={16} /></button>
+            </span>
+          </div>
+        )}
+
         {showForecast && (
           <ForecastView
             people={forecastPeople} items={forecastItems}
@@ -707,6 +787,43 @@ export default function Ardoise() {
             </div>
           )}
         </section>
+
+        {(() => {
+          const withBudget = cats.filter((c) => budgets[c.id] > 0 && !c.excludeFromTotal);
+          if (!withBudget.length) return null;
+          return (
+            <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300"
+                onClick={() => setShowBudgets((v) => { const nv = !v; storage.set("ui:budgets", nv ? "1" : "0"); return nv; })}>
+                <span className="flex items-center gap-2"><Wallet size={15} className="text-emerald-400" /> Budgets du mois</span>
+                <ChevronRight size={14} className={`text-slate-500 transition-transform ${showBudgets ? "rotate-90" : ""}`} />
+              </button>
+              {showBudgets && (
+                <ul className="space-y-2.5">
+                  {withBudget.map((c) => {
+                    const spent = byCat.find((b) => b.id === c.id)?.value || 0;
+                    const budget = budgets[c.id];
+                    const pct = Math.min(100, (spent / budget) * 100);
+                    const over = spent > budget;
+                    const near = !over && spent > budget * 0.8;
+                    const barColor = over ? "#F87171" : near ? "#FBBF24" : c.color;
+                    return (
+                      <li key={c.id}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1.5 text-slate-300"><span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.label}</span>
+                          <span className={`font-mono ${over ? "text-rose-400" : "text-slate-400"}`}>{fmtEUR.format(spent)} / {fmtEUR.format(budget)}</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          );
+        })()}
 
         <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Stat label="Dépensé ce mois" value={fmtEUR.format(monthTotal)} mono color="#F87171" />
@@ -844,12 +961,81 @@ export default function Ardoise() {
               </div>
             </section>
 
+            <section className="mb-6 grid gap-4 sm:grid-cols-2">
+              {/* Épargne du mois */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowSavings((v) => !v)}>
+                  <span className="flex items-center gap-2"><TrendingUp size={15} className="text-emerald-400" /> Épargne du mois</span>
+                  <ChevronRight size={14} className={`text-slate-500 transition-transform ${showSavings ? "rotate-90" : ""}`} />
+                </button>
+                {showSavings && (
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Viré vers l'épargne</span><span className="font-mono text-slate-200">{fmtEUR.format(monthSavings)}</span></li>
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Reste (gagné − dépensé)</span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Taux d'épargne</span><span className="font-mono text-slate-200">{savingsRate != null ? `${Math.round(savingsRate)} %` : "—"}</span></li>
+                  </ul>
+                )}
+              </div>
+              {/* Insights */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowInsights((v) => !v)}>
+                  <span className="flex items-center gap-2"><BarChart2 size={15} className="text-emerald-400" /> Variations vs mois dernier</span>
+                  <ChevronRight size={14} className={`text-slate-500 transition-transform ${showInsights ? "rotate-90" : ""}`} />
+                </button>
+                {showInsights && (
+                  insights.length ? (
+                    <ul className="space-y-1.5 text-sm">
+                      {insights.map((r) => (
+                        <li key={r.id} className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 text-slate-300"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.cat.color }} />{r.cat.label}</span>
+                          <span className={`flex items-center gap-1 font-mono ${r.diff > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                            {r.diff > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                            {r.diff > 0 ? "+" : "−"}{fmtEUR.format(Math.abs(r.diff))}
+                            {r.pct != null && <span className="text-slate-500">({r.pct > 0 ? "+" : ""}{Math.round(r.pct)}%)</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="py-4 text-center text-xs text-slate-600">Pas de variation notable.</p>
+                )}
+              </div>
+            </section>
+
+            {recurring.length > 0 && (
+              <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowRecurring((v) => !v)}>
+                  <span className="flex items-center gap-2"><Repeat size={15} className="text-emerald-400" /> Dépenses récurrentes ({recurring.length})</span>
+                  <ChevronRight size={14} className={`text-slate-500 transition-transform ${showRecurring ? "rotate-90" : ""}`} />
+                </button>
+                {showRecurring && (
+                  <ul className="space-y-1.5 text-sm">
+                    {recurring.map((r) => {
+                      const cat = catById[r.catId] || { label: r.catId, color: "#94A3B8" };
+                      return (
+                        <li key={r.pattern} className="flex items-center justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-2 text-slate-300">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.color }} />
+                            <span className="truncate">{r.label}</span>
+                            <span className="shrink-0 text-xs text-slate-500">· {r.months} mois</span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2 font-mono text-slate-300">
+                            {r.changed && <span title="Montant récent différent de la moyenne" className="text-amber-400">≠</span>}
+                            {fmtEUR.format(r.last)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            )}
+
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               {(() => {
                 const toReview = monthExp.filter((e) => e.needsReview);
                 return toReview.length > 0 && (
                   <button
-                    onClick={() => setFilterCat("__review__")}
+                    onClick={() => setReviewMode(true)}
                     className="mb-4 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-300 hover:bg-amber-500/20 transition"
                   >
                     <AlertTriangle size={14} className="shrink-0" />
@@ -944,12 +1130,21 @@ export default function Ardoise() {
 
       {showSettings && (
         <SettingsPanel
-          cats={cats} byCat={byCat} budgets={budgets} rules={rules}
+          cats={cats} byCat={byCat} budgets={budgets} rules={rules} expenses={expenses}
           onAddCat={addCat} onRemoveCat={removeCat} onUpdateCat={updateCatDef}
+          onSetBudget={setCatBudget}
           onChangeRules={(newRules) => setRules(newRules)}
           onExportJSON={exportJSON}
           onImportJSON={() => jsonRef.current?.click()}
           onReset={resetData} onClose={() => setShowSettings(false)}
+        />
+      )}
+      {reviewMode && (
+        <ReviewQueue
+          items={expenses.filter((e) => e.needsReview)}
+          cats={cats} catById={catById}
+          onPick={updateCat}
+          onClose={() => setReviewMode(false)}
         />
       )}
       {editExpense && (
@@ -968,6 +1163,51 @@ export default function Ardoise() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- ReviewQueue — file de revue plein écran des dépenses à catégoriser */
+
+function ReviewQueue({ items, cats, catById, onPick, onClose }) {
+  const cur = items[0];
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-slate-950/95 p-4">
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            <ClipboardList size={15} className="text-amber-400" /> À catégoriser
+            {items.length > 0 && <span className="text-slate-500">· {items.length} restante{items.length > 1 ? "s" : ""}</span>}
+          </h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X size={20} /></button>
+        </div>
+        {cur ? (
+          <div className="flex flex-1 flex-col">
+            <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center">
+              <p className="text-lg font-medium text-slate-100">{cur.label}</p>
+              <p className="mt-1 text-sm text-slate-500">{new Date(cur.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</p>
+              <p className={`mt-3 font-mono text-2xl font-semibold ${cur.isCredit ? "text-emerald-400" : "text-rose-400"}`}>{cur.isCredit ? "+" : "−"}{fmtEUR.format(cur.amount)}</p>
+            </div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-slate-500">Choisis une catégorie</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cats.filter((c) => c.id !== "autre").map((c) => (
+                <button key={c.id} onClick={() => onPick(cur.id, c.id)}
+                  className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm text-slate-200 transition hover:border-slate-600 hover:bg-slate-800">
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: c.color }} />
+                  <span className="truncate">{c.label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => onPick(cur.id, "autre")} className="mt-3 text-center text-xs text-slate-500 hover:text-slate-300">Laisser en « Autre »</button>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400"><Check size={32} /></div>
+            <p className="text-lg font-medium text-slate-200">Tout est catégorisé 🎉</p>
+            <button onClick={onClose} className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Revenir à la vue classique</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1269,7 +1509,7 @@ function EmptyState() {
   );
 }
 
-function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
+function SettingsPanel({ cats, rules, budgets, onAddCat, onRemoveCat, onUpdateCat, onSetBudget, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
   const [tab, setTab] = useState("categories");
   // catégories
   const [lbl, setLbl] = useState("");
@@ -1284,6 +1524,7 @@ function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChan
 
   const TABS = [
     { id: "categories", label: "Catégories" },
+    { id: "budgets", label: "Budgets" },
     { id: "rules", label: "Règles" },
     { id: "data", label: "Données" },
   ];
@@ -1299,6 +1540,32 @@ function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChan
     const updated = rules.map((r, i) => i === editRuleIdx ? { pattern: editRulePattern, categoryId: editRuleCatId } : r);
     onChangeRules(updated);
     setEditRuleIdx(null);
+  };
+
+  // Mots-clés regroupés par catégorie (une "ligne" de mots-clés par catégorie).
+  const keywordsByCat = {};
+  for (const r of rules) {
+    if (!r.pattern) continue;
+    for (const w of r.pattern.split(/\s+/).filter(Boolean)) {
+      (keywordsByCat[r.categoryId] ||= []);
+      if (!keywordsByCat[r.categoryId].includes(w)) keywordsByCat[r.categoryId].push(w);
+    }
+  }
+  const rebuildRules = (map) =>
+    Object.entries(map).filter(([, ws]) => ws.length).map(([categoryId, ws]) => ({ pattern: ws.join(" "), categoryId }));
+  const addKeyword = (categoryId, kw) => {
+    const w = kw.trim().toLowerCase();
+    if (!w) return;
+    const map = {};
+    // retire le mot de toutes les catégories (pas de doublon inter-catégories)
+    for (const [cid, ws] of Object.entries(keywordsByCat)) map[cid] = ws.filter((x) => x !== w);
+    (map[categoryId] ||= []).push(w);
+    onChangeRules(rebuildRules(map));
+  };
+  const removeKeyword = (categoryId, kw) => {
+    const map = {};
+    for (const [cid, ws] of Object.entries(keywordsByCat)) map[cid] = cid === categoryId ? ws.filter((x) => x !== kw) : [...ws];
+    onChangeRules(rebuildRules(map));
   };
 
   return (
@@ -1369,57 +1636,63 @@ function SettingsPanel({ cats, rules, onAddCat, onRemoveCat, onUpdateCat, onChan
           </>
         )}
 
-        {/* Règles */}
+        {/* Budgets */}
+        {tab === "budgets" && (
+          <>
+            <p className="mb-3 text-xs text-slate-500">Budget mensuel par catégorie. Laisse vide (0) pour aucun budget. Une barre de progression apparaît sur l'accueil.</p>
+            <ul className="max-h-72 space-y-1 overflow-y-auto">
+              {cats.filter((c) => !c.excludeFromTotal).map((c) => (
+                <li key={c.id} className="flex items-center gap-2 px-2 py-1.5">
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: c.color }} />
+                  <span className="flex-1 truncate text-sm text-slate-200">{c.label}</span>
+                  <NumInput
+                    value={budgets[c.id] || ""}
+                    onCommit={(v) => onSetBudget(c.id, parseFloat(v) > 0 ? parseFloat(v) : 0)}
+                    className="w-24 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-right font-mono text-sm text-slate-100 outline-none focus:border-emerald-500" />
+                  <span className="text-xs text-slate-500">€</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* Règles — un jeu de mots-clés par catégorie (pas de doublon inter-catégories) */}
         {tab === "rules" && (
           <>
-            <p className="mb-3 text-xs text-slate-500">Si le libellé contient le mot-clé, la catégorie est appliquée à l'import. Les règles perso ont priorité sur les règles par défaut.</p>
-            <ul className="mb-3 max-h-52 space-y-1 overflow-y-auto">
-              {rules.length === 0 && <li className="py-4 text-center text-xs text-slate-600">Aucune règle personnalisée.</li>}
-              {rules.map((r, i) => {
-                const cat = cats.find((c) => c.id === r.categoryId);
+            <p className="mb-3 text-xs text-slate-500">Un mot-clé présent dans le libellé applique la catégorie à l'import. Un même mot-clé ne peut appartenir qu'à une seule catégorie.</p>
+            <ul className="mb-3 max-h-60 space-y-2 overflow-y-auto">
+              {cats.filter((c) => (keywordsByCat[c.id] || []).length).map((c) => {
+                const kws = keywordsByCat[c.id];
+                const matchCount = expenses.filter((e) => kws.some((w) => ruleMatchesLabel(e.label, w))).length;
                 return (
-                  <li key={i} className="rounded-lg border border-transparent hover:border-slate-800 hover:bg-slate-800/30">
-                    {editRuleIdx === i ? (
-                      /* Mode édition */
-                      <div className="flex items-center gap-2 px-2 py-1.5">
-                        <input autoFocus value={editRulePattern}
-                          onChange={(e) => setEditRulePattern(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") saveEditRule(); if (e.key === "Escape") setEditRuleIdx(null); }}
-                          className="flex-1 rounded border border-emerald-600 bg-slate-950 px-2 py-1 font-mono text-sm text-slate-100 outline-none" />
-                        <select value={editRuleCatId} onChange={(e) => setEditRuleCatId(e.target.value)}
-                          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none focus:border-emerald-500">
-                          {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-                        </select>
-                        <button onClick={saveEditRule} className="text-emerald-400 hover:text-emerald-300"><Check size={15} /></button>
-                        <button onClick={() => setEditRuleIdx(null)} className="text-slate-500 hover:text-slate-300"><X size={15} /></button>
-                      </div>
-                    ) : (
-                      /* Mode affichage */
-                      <div className="flex items-center gap-2 px-2 py-1.5">
-                        <span className="flex-1 font-mono text-sm text-slate-200">"{r.pattern}"</span>
-                        <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                          <span className="h-2 w-2 rounded-full" style={{ background: cat?.color || "#94A3B8" }} />
-                          {cat?.label || r.categoryId}
+                  <li key={c.id} className="rounded-lg border border-slate-800 p-2">
+                    <div className="mb-1.5 flex items-center gap-2 text-xs">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
+                      <span className="font-medium text-slate-200">{c.label}</span>
+                      <span className="text-slate-500">· {matchCount} dépense{matchCount > 1 ? "s" : ""}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {kws.map((w) => (
+                        <span key={w} className="flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 font-mono text-xs text-slate-200">
+                          {w}
+                          <button onClick={() => removeKeyword(c.id, w)} className="text-slate-500 hover:text-rose-400"><X size={11} /></button>
                         </span>
-                        <button onClick={() => { setEditRuleIdx(i); setEditRulePattern(r.pattern); setEditRuleCatId(r.categoryId); }}
-                          className="text-slate-600 hover:text-slate-300"><Pencil size={14} /></button>
-                        <button onClick={() => onChangeRules(rules.filter((_, idx) => idx !== i))}
-                          className="text-slate-600 hover:text-rose-400"><Trash2 size={14} /></button>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </li>
                 );
               })}
+              {rules.length === 0 && <li className="py-4 text-center text-xs text-slate-600">Aucun mot-clé personnalisé.</li>}
             </ul>
             <div className="flex gap-2">
-              <input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="mot-clé"
-                onKeyDown={(e) => { if (e.key === "Enter" && pattern.trim()) { onChangeRules([...rules, { pattern: pattern.trim(), categoryId: ruleCatId }]); setPattern(""); } }}
+              <input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="nouveau mot-clé"
+                onKeyDown={(e) => { if (e.key === "Enter" && pattern.trim()) { addKeyword(ruleCatId, pattern); setPattern(""); } }}
                 className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
               <select value={ruleCatId} onChange={(e) => setRuleCatId(e.target.value)}
                 className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-sm text-slate-200 outline-none focus:border-emerald-500">
                 {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
-              <button disabled={!pattern.trim()} onClick={() => { onChangeRules([...rules, { pattern: pattern.trim(), categoryId: ruleCatId }]); setPattern(""); }}
+              <button disabled={!pattern.trim()} onClick={() => { addKeyword(ruleCatId, pattern); setPattern(""); }}
                 className="rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">
                 <Plus size={16} />
               </button>
@@ -1518,15 +1791,24 @@ function EditExpenseModal({ expense, cats, onSave, onClose }) {
 
 function YearView({ expenses, year, catById }) {
   const [selYear, setSelYear] = useState(+year);
+  const [showCats, setShowCats] = useState(true);
+  const [showMonths, setShowMonths] = useState(true);
+
+  const inYear = expenses.filter((e) => e.date.startsWith(`${selYear}-`) && !catById[e.categoryId]?.excludeFromTotal);
   const displayMonths = Array.from({ length: 12 }, (_, i) => {
     const ym = `${selYear}-${String(i + 1).padStart(2, "0")}`;
-    const total = expenses
-      .filter((e) => e.date.startsWith(ym) && !e.isCredit && !catById[e.categoryId]?.excludeFromTotal)
-      .reduce((s, e) => s + e.amount, 0);
+    const total = inYear.filter((e) => !e.isCredit && e.date.startsWith(ym)).reduce((s, e) => s + e.amount, 0);
     return { ym, label: new Date(selYear, i, 1).toLocaleDateString("fr-FR", { month: "short" }), total };
   });
   const displayMax = Math.max(...displayMonths.map((m) => m.total), 1);
-  const displayTotal = displayMonths.reduce((s, m) => s + m.total, 0);
+  const spentTotal = displayMonths.reduce((s, m) => s + m.total, 0);
+  const incomeTotal = inYear.filter((e) => e.isCredit).reduce((s, e) => s + e.amount, 0);
+
+  const catTotals = {};
+  inYear.filter((e) => !e.isCredit).forEach((e) => (catTotals[e.categoryId] = (catTotals[e.categoryId] || 0) + e.amount));
+  const yearCats = Object.entries(catTotals)
+    .map(([id, value]) => ({ id, value, ...(catById[id] || { label: id, color: "#94A3B8" }) }))
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -1538,6 +1820,22 @@ function YearView({ expenses, year, catById }) {
           <button onClick={() => setSelYear((y) => y + 1)} className="text-slate-500 hover:text-slate-200"><ChevronRight size={16} /></button>
         </div>
       </div>
+
+      <div className="mb-5 grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500">Dépensé</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold text-rose-400">{fmtEUR.format(spentTotal)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500">Gagné</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold text-emerald-400">{fmtEUR.format(incomeTotal)}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500">Solde</p>
+          <p className={`mt-0.5 font-mono text-sm font-semibold ${incomeTotal - spentTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(incomeTotal - spentTotal)}</p>
+        </div>
+      </div>
+
       <div className="mb-4 grid grid-cols-12 items-end gap-1" style={{ height: 120 }}>
         {displayMonths.map((m) => (
           <div key={m.ym} className="flex flex-col items-center gap-1">
@@ -1547,21 +1845,49 @@ function YearView({ expenses, year, catById }) {
           </div>
         ))}
       </div>
+
+      {yearCats.length > 0 && (
+        <div className="border-t border-slate-800 pt-4">
+          <button onClick={() => setShowCats((v) => !v)} className="mb-2 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300">
+            <span>Par catégorie</span>
+            <ChevronRight size={14} className={`text-slate-500 transition-transform ${showCats ? "rotate-90" : ""}`} />
+          </button>
+          {showCats && (
+            <ul className="mb-3">
+              {yearCats.map((c) => (
+                <li key={c.id} className="flex items-center gap-2 py-1 text-sm">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
+                  <span className="flex-1 truncate text-slate-300">{c.label}</span>
+                  <span className="font-mono text-slate-400">{fmtEUR.format(c.value)}</span>
+                  <span className="w-10 text-right text-xs text-slate-600">{Math.round((c.value / spentTotal) * 100)}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="border-t border-slate-800 pt-4">
-        <table className="w-full text-sm">
-          <tbody>
-            {displayMonths.filter((m) => m.total > 0).map((m) => (
-              <tr key={m.ym} className="border-b border-slate-800/50">
-                <td className="py-1.5 capitalize text-slate-400">{m.label}</td>
-                <td className="py-1.5 text-right font-mono text-slate-200">{fmtEUR.format(m.total)}</td>
+        <button onClick={() => setShowMonths((v) => !v)} className="mb-2 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300">
+          <span>Par mois</span>
+          <ChevronRight size={14} className={`text-slate-500 transition-transform ${showMonths ? "rotate-90" : ""}`} />
+        </button>
+        {showMonths && (
+          <table className="w-full text-sm">
+            <tbody>
+              {displayMonths.filter((m) => m.total > 0).map((m) => (
+                <tr key={m.ym} className="border-b border-slate-800/50">
+                  <td className="py-1.5 capitalize text-slate-400">{m.label}</td>
+                  <td className="py-1.5 text-right font-mono text-slate-200">{fmtEUR.format(m.total)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="pt-3 font-medium text-slate-300">Total {selYear}</td>
+                <td className="pt-3 text-right font-mono font-semibold text-emerald-400">{fmtEUR.format(spentTotal)}</td>
               </tr>
-            ))}
-            <tr>
-              <td className="pt-3 font-medium text-slate-300">Total {selYear}</td>
-              <td className="pt-3 text-right font-mono font-semibold text-emerald-400">{fmtEUR.format(displayTotal)}</td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
