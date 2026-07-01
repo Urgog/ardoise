@@ -361,8 +361,11 @@ export default function Ardoise() {
     return out;
   }, [byMonth, catById, month]);
 
-  // Épargne du mois : argent sorti vers les comptes exclus (inter-comptes / épargne).
-  const monthSavings = useMemo(() => monthExp.filter((e) => !e.isCredit && catById[e.categoryId]?.excludeFromTotal).reduce((s, e) => s + e.amount, 0), [monthExp, catById]);
+  // Épargne NETTE du mois : argent sorti vers l'épargne (débits inter-comptes)
+  // moins l'argent récupéré de l'épargne (crédits inter-comptes).
+  const monthSavings = useMemo(() => monthExp
+    .filter((e) => catById[e.categoryId]?.excludeFromTotal)
+    .reduce((s, e) => s + (e.isCredit ? -e.amount : e.amount), 0), [monthExp, catById]);
   const savingsRate = monthIncome > 0 ? ((monthIncome - monthTotal) / monthIncome) * 100 : null;
 
   // Insights : plus grosses variations par catégorie vs mois précédent.
@@ -403,14 +406,20 @@ export default function Ardoise() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const isNum = /^\d+([.,]\d+)?$/.test(q); // requête purement numérique → montant
     return monthExp
       .filter((e) => filterCat === "all" ? true : filterCat === "__review__" ? e.needsReview : e.categoryId === filterCat)
       .filter((e) => {
         if (!q) return true;
-        // recherche étendue : libellé, catégorie, montant
+        if (isNum) {
+          // montant uniquement (pas les nombres dans les libellés)
+          const amt = String(e.amount).replace(".", ",");
+          return q.includes(",")
+            ? amt.startsWith(q)                                  // "1,99" → montant exact/préfixe
+            : String(Math.trunc(e.amount)).includes(q);          // "200" → partie entière contient 200
+        }
         const cat = (catById[e.categoryId]?.label || "").toLowerCase();
-        return e.label.toLowerCase().includes(q) || cat.includes(q) ||
-          String(e.amount).includes(q) || fmtEUR.format(e.amount).toLowerCase().includes(q);
+        return e.label.toLowerCase().includes(q) || cat.includes(q);
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [monthExp, filterCat, query, catById]);
@@ -961,7 +970,7 @@ export default function Ardoise() {
               </div>
             </section>
 
-            <section className="mb-6 grid gap-4 sm:grid-cols-2">
+            <section className="mb-6 grid items-start gap-4 sm:grid-cols-2">
               {/* Épargne du mois */}
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
                 <button className="mb-3 flex w-full items-center justify-between gap-2 text-sm font-medium text-slate-300" onClick={() => setShowSavings((v) => !v)}>
@@ -970,7 +979,7 @@ export default function Ardoise() {
                 </button>
                 {showSavings && (
                   <ul className="space-y-2 text-sm">
-                    <li className="flex items-center justify-between"><span className="text-slate-400">Viré vers l'épargne</span><span className="font-mono text-slate-200">{fmtEUR.format(monthSavings)}</span></li>
+                    <li className="flex items-center justify-between"><span className="text-slate-400">Épargne nette (viré − récupéré)</span><span className={`font-mono ${monthSavings >= 0 ? "text-slate-200" : "text-amber-400"}`}>{fmtEUR.format(monthSavings)}</span></li>
                     <li className="flex items-center justify-between"><span className="text-slate-400">Reste (gagné − dépensé)</span><span className={`font-mono ${monthIncome - monthTotal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{fmtEUR.format(monthIncome - monthTotal)}</span></li>
                     <li className="flex items-center justify-between"><span className="text-slate-400">Taux d'épargne</span><span className="font-mono text-slate-200">{savingsRate != null ? `${Math.round(savingsRate)} %` : "—"}</span></li>
                   </ul>
@@ -1016,11 +1025,12 @@ export default function Ardoise() {
                           <span className="flex min-w-0 items-center gap-2 text-slate-300">
                             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.color }} />
                             <span className="truncate">{r.label}</span>
-                            <span className="shrink-0 text-xs text-slate-500">· {r.months} mois</span>
                           </span>
-                          <span className="flex shrink-0 items-center gap-2 font-mono text-slate-300">
+                          <span className="flex shrink-0 items-center gap-2 text-xs">
+                            <span className="rounded-full px-2 py-0.5" style={{ background: cat.color + "22", color: cat.color }}>{cat.label}</span>
+                            <span className="text-slate-500">{r.months} mois</span>
                             {r.changed && <span title="Montant récent différent de la moyenne" className="text-amber-400">≠</span>}
-                            {fmtEUR.format(r.last)}
+                            <span className="font-mono text-slate-300">{fmtEUR.format(r.last)}</span>
                           </span>
                         </li>
                       );
@@ -1032,14 +1042,14 @@ export default function Ardoise() {
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               {(() => {
-                const toReview = monthExp.filter((e) => e.needsReview);
+                const toReview = expenses.filter((e) => e.needsReview);
                 return toReview.length > 0 && (
                   <button
                     onClick={() => setReviewMode(true)}
                     className="mb-4 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-300 hover:bg-amber-500/20 transition"
                   >
                     <AlertTriangle size={14} className="shrink-0" />
-                    <span><strong>{toReview.length}</strong> dépense{toReview.length > 1 ? "s" : ""} sans catégorie claire — clique pour les catégoriser</span>
+                    <span><strong>{toReview.length}</strong> dépense{toReview.length > 1 ? "s" : ""} sans catégorie claire (tous mois) — clique pour les catégoriser</span>
                   </button>
                 );
               })()}
@@ -1509,7 +1519,7 @@ function EmptyState() {
   );
 }
 
-function SettingsPanel({ cats, rules, budgets, onAddCat, onRemoveCat, onUpdateCat, onSetBudget, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
+function SettingsPanel({ cats, rules, budgets, expenses = [], onAddCat, onRemoveCat, onUpdateCat, onSetBudget, onChangeRules, onExportJSON, onImportJSON, onReset, onClose }) {
   const [tab, setTab] = useState("categories");
   // catégories
   const [lbl, setLbl] = useState("");
