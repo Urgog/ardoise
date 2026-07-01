@@ -8,3 +8,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <Ardoise />
   </React.StrictMode>
 );
+
+// PWA : enregistre le service worker (installable + hors-ligne)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .catch(() => {});
+  });
+}
