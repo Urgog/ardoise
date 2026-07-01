@@ -679,7 +679,7 @@ export default function Ardoise() {
         input[type=number]{-moz-appearance:textfield}
 
         /* ---- Thème clair : remappe les couleurs sombres sous .theme-light uniquement ---- */
-        .theme-light{ color-scheme:light; }
+        .theme-light{ color-scheme:light; background-color:#f1f5f9 !important; color:#0f172a !important; }
         .theme-light select option{ background:#ffffff; }
         .theme-light ::-webkit-scrollbar-thumb{ background:#cbd5e1; }
         /* fonds */
